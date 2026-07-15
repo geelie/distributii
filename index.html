@@ -388,8 +388,18 @@ function renderShell(){
       <nav id="side-nav" class="flex-1 px-3 py-4 space-y-1"></nav>
       <div class="px-4 py-4 border-t border-white/10">
         <div class="text-xs text-slate-400 mb-0.5">${esc(currentProfile.email)}</div>
-        <div class="mb-3">${rolePill(currentProfile.role)}</div>
-        <button id="btn-logout" class="text-xs text-slate-300 hover:text-white underline">Deconectare</button>
+        <div class="mb-3 flex items-center gap-1.5 flex-wrap">
+          ${rolePill(currentProfile.role)}
+          ${currentProfile.role === 'magazin'
+            ? (currentProfile.nume ? `<span class="text-xs text-slate-300">${esc(currentProfile.nume)}${currentProfile.filiala ? ' - ' + esc(currentProfile.filiala) : ''}</span>` : '')
+            : (currentProfile.nume ? `<span class="text-xs text-slate-300">${esc(currentProfile.nume)}</span>` : '')
+          }
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btn-change-pass" class="text-xs text-slate-300 hover:text-white underline">Schimbă parola</button>
+          <span class="text-slate-600 text-xs">·</span>
+          <button id="btn-logout" class="text-xs text-slate-300 hover:text-white underline">Deconectare</button>
+        </div>
       </div>
     </aside>
     <main class="flex-1 min-w-0">
@@ -413,6 +423,9 @@ function renderShell(){
   });
   document.getElementById('btn-logout').addEventListener('click', async ()=>{
     await supa.auth.signOut();
+  });
+  document.getElementById('btn-change-pass').addEventListener('click', ()=>{
+    renderChangePasswordModal();
   });
 
   openTab(tabs[0].key, tabs);
@@ -457,6 +470,57 @@ function openTab(key, tabs){
         <p class="text-slate-400 text-sm">Această secțiune va fi adăugată ulterior.</p>
       </div>`;
   }
+}
+
+// ==================================================================
+// MODAL SCHIMBARE PAROLĂ (utilizator autentificat, fără parola veche)
+// ==================================================================
+function renderChangePasswordModal(){
+  const overlay = document.createElement('div');
+  overlay.id = 'change-pass-overlay';
+  overlay.className = 'fixed inset-0 z-40 flex items-center justify-center px-4';
+  overlay.style.background = 'rgba(15,20,25,0.55)';
+  overlay.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm fade-in">
+      <h2 class="text-lg font-bold mb-1">Schimbă parola</h2>
+      <p class="text-sm text-slate-500 mb-5">Alege o parolă nouă pentru contul tău.</p>
+      <form id="form-change-pass" class="space-y-4">
+        <div>${fieldLabel('Parolă nouă')}<input type="password" id="change-pass-1" required minlength="6" class="${inputBase()}"></div>
+        <div>${fieldLabel('Confirmă parola nouă')}<input type="password" id="change-pass-2" required minlength="6" class="${inputBase()}"></div>
+        <div class="flex gap-2 pt-1">
+          <button type="button" id="change-pass-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
+          <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Salvează</button>
+        </div>
+        <p id="change-pass-msg" class="text-sm text-center"></p>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  document.getElementById('change-pass-cancel').addEventListener('click', ()=> overlay.remove());
+  overlay.addEventListener('click', (e)=>{ if (e.target === overlay) overlay.remove(); });
+
+  document.getElementById('form-change-pass').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const msg = document.getElementById('change-pass-msg');
+    const p1 = document.getElementById('change-pass-1').value;
+    const p2 = document.getElementById('change-pass-2').value;
+    if (p1 !== p2){
+      msg.className = 'text-sm text-center text-red-600';
+      msg.textContent = 'Parolele nu coincid.';
+      return;
+    }
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = 'Se salvează...';
+    const { error } = await supa.auth.updateUser({ password: p1 });
+    if (error){
+      msg.className = 'text-sm text-center text-red-600';
+      msg.textContent = error.message;
+      btn.disabled = false; btn.textContent = 'Salvează';
+      return;
+    }
+    overlay.remove();
+    toast('Parola a fost schimbată cu succes.');
+  });
 }
 
 function renderPendingRole(){
