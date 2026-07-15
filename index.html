@@ -1,1 +1,556 @@
 
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Distribuție Vehicule Electrice</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --graphite:#161B22;
+    --graphite-2:#20272F;
+    --teal:#0FBF9F;
+    --teal-dark:#0B9B82;
+    --amber:#F0A93B;
+    --bg:#F5F7F8;
+    --line:#E3E7E9;
+  }
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);}
+  h1,h2,h3,.brand{font-family:'Manrope',system-ui,sans-serif;}
+  .btn-primary{background:var(--teal);color:#0A1210;font-weight:700;}
+  .btn-primary:hover{background:var(--teal-dark);}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed;}
+  .tab-active{border-bottom:2px solid var(--teal);color:#111827;}
+  .tab-inactive{border-bottom:2px solid transparent;color:#6B7280;}
+  .role-pill{font-size:11px;font-weight:700;letter-spacing:.03em;padding:2px 8px;border-radius:999px;}
+  .role-magazin{background:#E6F4FF;color:#1D6FA5;}
+  .role-agent{background:#EAF7F0;color:#0B8A5F;}
+  .role-admin{background:#FFF1DE;color:#B4650B;}
+  .role-superadmin{background:#F3E8FF;color:#7C3AED;}
+  .role-none{background:#F1F2F4;color:#8A8F98;}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:#D3D8DA;border-radius:4px;}
+  .fade-in{animation:fadeIn .25s ease;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ============================================================ -->
+<!-- CONFIG SUPABASE — completează cu datele proiectului tău      -->
+<!-- ============================================================ -->
+<script>
+  const SUPABASE_URL = 'https://ksjvpuyiuplaonpbwrfn.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzanZwdXlpdXBsYW9ucGJ3cmZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMDgyNDEsImV4cCI6MjA5OTY4NDI0MX0._Wp1Ty4KBFJORjmI41S5eFfVulZJyhMr0ODGykn49uM';
+  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+</script>
+
+<div id="app" class="min-h-screen"></div>
+
+<script>
+const app = document.getElementById('app');
+let currentUser = null;
+let currentProfile = null;
+let recoveryMode = false;
+
+// ------------------------------------------------------------------
+// UTIL
+// ------------------------------------------------------------------
+function esc(str){
+  if(str === null || str === undefined) return '';
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function toast(msg, isError=false){
+  const el = document.createElement('div');
+  el.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium fade-in ${isError ? 'bg-red-600 text-white' : 'bg-[var(--graphite)] text-white'}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=> el.remove(), 3500);
+}
+function rolePill(role){
+  const map = {
+    magazin: ['Magazin','role-magazin'],
+    agent: ['Agent','role-agent'],
+    admin: ['Admin','role-admin'],
+    superadmin: ['Super Admin','role-superadmin'],
+  };
+  const [label, cls] = map[role] || ['Fără rol','role-none'];
+  return `<span class="role-pill ${cls}">${label}</span>`;
+}
+
+// ------------------------------------------------------------------
+// BOOTSTRAP — verifică sesiunea existentă și ascultă schimbări
+// ------------------------------------------------------------------
+supa.auth.onAuthStateChange((event, session) => {
+  if (event === 'PASSWORD_RECOVERY') {
+    recoveryMode = true;
+    renderResetPassword();
+    return;
+  }
+  if (event === 'SIGNED_OUT') {
+    currentUser = null; currentProfile = null;
+    renderAuthScreen();
+    return;
+  }
+  if (session && !recoveryMode) {
+    currentUser = session.user;
+    loadProfileAndRender();
+  }
+});
+
+(async function init(){
+  const { data: { session } } = await supa.auth.getSession();
+  if (session) {
+    currentUser = session.user;
+    await loadProfileAndRender();
+  } else {
+    renderAuthScreen();
+  }
+})();
+
+async function loadProfileAndRender(){
+  const { data, error } = await supa.from('profiles').select('*').eq('id', currentUser.id).single();
+  if (error) { toast('Eroare la încărcarea profilului: ' + error.message, true); }
+  currentProfile = data || null;
+  renderShell();
+}
+
+// ==================================================================
+// ECRAN AUTENTIFICARE (Autentificare / Cont nou / Am uitat parola)
+// ==================================================================
+function renderAuthScreen(mode='login'){
+  app.innerHTML = `
+  <div class="min-h-screen flex items-center justify-center px-4" style="background:radial-gradient(circle at 20% 20%, #1B2430 0%, #0E1318 65%);">
+    <div class="w-full max-w-md">
+      <div class="text-center mb-8">
+        <div class="inline-flex items-center gap-2 mb-2">
+          <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:var(--teal)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="#0A1210"/></svg>
+          </div>
+          <span class="brand text-white text-xl font-extrabold tracking-tight">EV Distribuție</span>
+        </div>
+        <p class="text-slate-400 text-sm">Platformă de distribuție vehicule electrice</p>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow-xl p-6 fade-in">
+        <div class="flex text-sm font-semibold mb-6 border-b" style="border-color:var(--line)">
+          <button data-tab="login" class="auth-tab px-3 py-2 -mb-px ${mode==='login'?'tab-active':'tab-inactive'}">Autentificare</button>
+          <button data-tab="signup" class="auth-tab px-3 py-2 -mb-px ${mode==='signup'?'tab-active':'tab-inactive'}">Cont nou</button>
+          <button data-tab="forgot" class="auth-tab px-3 py-2 -mb-px ${mode==='forgot'?'tab-active':'tab-inactive'}">Am uitat parola</button>
+        </div>
+        <div id="auth-panel"></div>
+      </div>
+      <p class="text-center text-slate-500 text-xs mt-6">© ${new Date().getFullYear()} EV Distribuție</p>
+    </div>
+  </div>`;
+
+  document.querySelectorAll('.auth-tab').forEach(btn=>{
+    btn.addEventListener('click', ()=> renderAuthScreen(btn.dataset.tab));
+  });
+
+  const panel = document.getElementById('auth-panel');
+  if (mode === 'login') panel.innerHTML = loginForm();
+  if (mode === 'signup') panel.innerHTML = signupForm();
+  if (mode === 'forgot') panel.innerHTML = forgotForm();
+
+  if (mode === 'login') bindLoginForm();
+  if (mode === 'signup') bindSignupForm();
+  if (mode === 'forgot') bindForgotForm();
+}
+
+function fieldLabel(txt){ return `<label class="block text-sm font-medium text-slate-700 mb-1">${txt}</label>`; }
+function inputBase(){ return 'w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--teal)] focus:border-transparent'; }
+
+function loginForm(){
+  return `
+  <form id="form-login" class="space-y-4">
+    <div>${fieldLabel('Email')}<input type="email" id="login-email" required class="${inputBase()}" placeholder="nume@exemplu.ro"></div>
+    <div>${fieldLabel('Parolă')}<input type="password" id="login-pass" required class="${inputBase()}" placeholder="••••••••"></div>
+    <button type="submit" class="w-full btn-primary rounded-lg py-2.5 text-sm">Autentificare</button>
+    <p id="login-msg" class="text-sm text-center"></p>
+  </form>`;
+}
+function bindLoginForm(){
+  document.getElementById('form-login').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const btn = e.target.querySelector('button');
+    btn.disabled = true;
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-pass').value;
+    const { error } = await supa.auth.signInWithPassword({ email, password });
+    btn.disabled = false;
+    const msg = document.getElementById('login-msg');
+    if (error){
+      msg.className = 'text-sm text-center text-red-600';
+      msg.textContent = error.message.includes('Invalid login') ? 'Email sau parolă incorectă.' : error.message;
+    }
+  });
+}
+
+function signupForm(){
+  return `
+  <form id="form-signup" class="space-y-4">
+    <div>${fieldLabel('Email')}<input type="email" id="signup-email" required class="${inputBase()}" placeholder="nume@exemplu.ro"></div>
+    <div>${fieldLabel('Parolă')}<input type="password" id="signup-pass" required minlength="6" class="${inputBase()}" placeholder="Minim 6 caractere"></div>
+    <div>${fieldLabel('Confirmă parola')}<input type="password" id="signup-pass2" required minlength="6" class="${inputBase()}"></div>
+    <button type="submit" class="w-full btn-primary rounded-lg py-2.5 text-sm">Creează cont</button>
+    <p id="signup-msg" class="text-sm text-center"></p>
+    <p class="text-xs text-slate-500 text-center">Contul nou nu are niciun rol alocat. Un administrator va activa contul și îi va atribui rolul.</p>
+  </form>`;
+}
+function bindSignupForm(){
+  document.getElementById('form-signup').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const btn = e.target.querySelector('button');
+    const msg = document.getElementById('signup-msg');
+    const email = document.getElementById('signup-email').value.trim();
+    const pass = document.getElementById('signup-pass').value;
+    const pass2 = document.getElementById('signup-pass2').value;
+    if (pass !== pass2){
+      msg.className = 'text-sm text-center text-red-600';
+      msg.textContent = 'Parolele nu coincid.';
+      return;
+    }
+    btn.disabled = true;
+    const { error } = await supa.auth.signUp({ email, password: pass });
+    btn.disabled = false;
+    if (error){
+      msg.className = 'text-sm text-center text-red-600';
+      msg.textContent = error.message;
+    } else {
+      msg.className = 'text-sm text-center text-emerald-600';
+      msg.textContent = 'Cont creat. Verifică emailul pentru confirmare (dacă este activată), apoi autentifică-te.';
+      e.target.reset();
+    }
+  });
+}
+
+function forgotForm(){
+  return `
+  <form id="form-forgot" class="space-y-4">
+    <p class="text-sm text-slate-500">Introdu adresa de email folosită la înregistrare. Vei primi un link de resetare a parolei.</p>
+    <div>${fieldLabel('Email')}<input type="email" id="forgot-email" required class="${inputBase()}" placeholder="nume@exemplu.ro"></div>
+    <button type="submit" class="w-full btn-primary rounded-lg py-2.5 text-sm">Trimite link de resetare</button>
+    <p id="forgot-msg" class="text-sm text-center"></p>
+  </form>`;
+}
+function bindForgotForm(){
+  document.getElementById('form-forgot').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const btn = e.target.querySelector('button');
+    const msg = document.getElementById('forgot-msg');
+    const email = document.getElementById('forgot-email').value.trim();
+    btn.disabled = true;
+    const { error } = await supa.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    btn.disabled = false;
+    if (error){
+      msg.className = 'text-sm text-center text-red-600';
+      msg.textContent = error.message;
+    } else {
+      msg.className = 'text-sm text-center text-emerald-600';
+      msg.textContent = 'Dacă adresa există, un email cu linkul de resetare a fost trimis.';
+    }
+  });
+}
+
+// ==================================================================
+// ECRAN MODIFICARE PAROLĂ (după click pe linkul din email)
+// ==================================================================
+function renderResetPassword(){
+  app.innerHTML = `
+  <div class="min-h-screen flex items-center justify-center px-4" style="background:radial-gradient(circle at 20% 20%, #1B2430 0%, #0E1318 65%);">
+    <div class="w-full max-w-md">
+      <div class="bg-white rounded-2xl shadow-xl p-6 fade-in">
+        <h2 class="text-lg font-bold mb-1">Modificare parolă</h2>
+        <p class="text-sm text-slate-500 mb-5">Alege o parolă nouă pentru contul tău.</p>
+        <form id="form-reset" class="space-y-4">
+          <div>${fieldLabel('Parolă nouă')}<input type="password" id="reset-pass" required minlength="6" class="${inputBase()}"></div>
+          <div>${fieldLabel('Confirmă parola nouă')}<input type="password" id="reset-pass2" required minlength="6" class="${inputBase()}"></div>
+          <button type="submit" class="w-full btn-primary rounded-lg py-2.5 text-sm">Salvează parola nouă</button>
+          <p id="reset-msg" class="text-sm text-center"></p>
+        </form>
+      </div>
+    </div>
+  </div>`;
+
+  document.getElementById('form-reset').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const msg = document.getElementById('reset-msg');
+    const p1 = document.getElementById('reset-pass').value;
+    const p2 = document.getElementById('reset-pass2').value;
+    if (p1 !== p2){
+      msg.className = 'text-sm text-center text-red-600';
+      msg.textContent = 'Parolele nu coincid.';
+      return;
+    }
+    const { error } = await supa.auth.updateUser({ password: p1 });
+    if (error){
+      msg.className = 'text-sm text-center text-red-600';
+      msg.textContent = error.message;
+    } else {
+      msg.className = 'text-sm text-center text-emerald-600';
+      msg.textContent = 'Parola a fost schimbată. Redirecționare...';
+      recoveryMode = false;
+      setTimeout(async ()=>{
+        const { data: { session } } = await supa.auth.getSession();
+        if (session){ currentUser = session.user; await loadProfileAndRender(); }
+        else renderAuthScreen();
+      }, 1200);
+    }
+  });
+}
+
+// ==================================================================
+// SHELL APLICAȚIE (după autentificare)
+// ==================================================================
+function renderShell(){
+  if (!currentProfile){
+    renderPendingRole();
+    return;
+  }
+  if (!currentProfile.role){
+    renderPendingRole();
+    return;
+  }
+
+  const tabs = tabsForRole(currentProfile.role);
+
+  app.innerHTML = `
+  <div class="min-h-screen flex">
+    <aside class="w-60 shrink-0 text-white flex flex-col" style="background:var(--graphite)">
+      <div class="px-5 py-5 flex items-center gap-2 border-b border-white/10">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background:var(--teal)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="#0A1210"/></svg>
+        </div>
+        <span class="brand font-extrabold tracking-tight">EV Distribuție</span>
+      </div>
+      <nav id="side-nav" class="flex-1 px-3 py-4 space-y-1"></nav>
+      <div class="px-4 py-4 border-t border-white/10">
+        <div class="text-xs text-slate-400 mb-0.5">${esc(currentProfile.email)}</div>
+        <div class="mb-3">${rolePill(currentProfile.role)}</div>
+        <button id="btn-logout" class="text-xs text-slate-300 hover:text-white underline">Deconectare</button>
+      </div>
+    </aside>
+    <main class="flex-1 min-w-0">
+      <header class="bg-white border-b px-6 py-4" style="border-color:var(--line)">
+        <h1 id="page-title" class="text-lg font-bold text-slate-800"></h1>
+      </header>
+      <div id="page-content" class="p-6"></div>
+    </main>
+  </div>`;
+
+  const nav = document.getElementById('side-nav');
+  nav.innerHTML = tabs.map((t,i)=>`
+    <button data-key="${t.key}" class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium ${i===0 ? 'bg-white/10 text-white':'text-slate-300 hover:bg-white/5'}">${t.label}</button>
+  `).join('');
+  nav.querySelectorAll('.nav-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      nav.querySelectorAll('.nav-btn').forEach(b=> b.className = 'nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/5');
+      btn.className = 'nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium bg-white/10 text-white';
+      openTab(btn.dataset.key, tabs);
+    });
+  });
+  document.getElementById('btn-logout').addEventListener('click', async ()=>{
+    await supa.auth.signOut();
+  });
+
+  openTab(tabs[0].key, tabs);
+}
+
+function tabsForRole(role){
+  const common = [];
+  if (role === 'magazin') return [
+    { key:'stoc', label:'Stocul meu' },
+    { key:'comenzi', label:'Comenzile mele' },
+    { key:'statistici', label:'Statistici' },
+  ];
+  if (role === 'agent') return [
+    { key:'comenzi', label:'Comenzile mele' },
+    { key:'statistici', label:'Statistici' },
+  ];
+  if (role === 'admin') return [
+    { key:'depozit', label:'Depozit central' },
+    { key:'comenzi', label:'Comenzi' },
+    { key:'preturi', label:'Prețuri & promoții' },
+    { key:'utilizatori', label:'Administrare utilizatori' },
+  ];
+  if (role === 'superadmin') return [
+    { key:'depozit', label:'Depozit central' },
+    { key:'comenzi', label:'Comenzi' },
+    { key:'preturi', label:'Prețuri & promoții' },
+    { key:'aprobari', label:'Aprobări' },
+    { key:'utilizatori', label:'Administrare utilizatori' },
+  ];
+  return common;
+}
+
+function openTab(key, tabs){
+  const t = tabs.find(x=>x.key===key);
+  document.getElementById('page-title').textContent = t ? t.label : '';
+  const content = document.getElementById('page-content');
+  if (key === 'utilizatori'){
+    renderUserAdmin(content);
+  } else {
+    content.innerHTML = `
+      <div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)">
+        <p class="text-slate-400 text-sm">Această secțiune va fi adăugată ulterior.</p>
+      </div>`;
+  }
+}
+
+function renderPendingRole(){
+  app.innerHTML = `
+  <div class="min-h-screen flex items-center justify-center px-4" style="background:var(--bg)">
+    <div class="max-w-md text-center bg-white rounded-2xl shadow p-8 fade-in">
+      <div class="w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-4" style="background:#FFF1DE">
+        <span class="text-xl">⏳</span>
+      </div>
+      <h2 class="font-bold text-lg mb-2">Cont în așteptare</h2>
+      <p class="text-sm text-slate-500 mb-6">Contul tău a fost creat cu succes, dar încă nu are un rol alocat. Contactează un administrator pentru activare.</p>
+      <button id="btn-logout-pending" class="text-sm text-slate-500 underline">Deconectare</button>
+    </div>
+  </div>`;
+  document.getElementById('btn-logout-pending').addEventListener('click', async ()=>{
+    await supa.auth.signOut();
+  });
+}
+
+// ==================================================================
+// ADMINISTRARE UTILIZATORI (admin / superadmin)
+// ==================================================================
+async function renderUserAdmin(container){
+  container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+
+  const { data: profiles, error } = await supa.from('profiles').select('*').order('created_at', { ascending: false });
+  if (error){ container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(error.message)}</div>`; return; }
+
+  const { data: assignments } = await supa.from('agent_magazine').select('*');
+  const magazine = profiles.filter(p => p.role === 'magazin');
+
+  container.innerHTML = `
+    <div class="bg-white rounded-xl border overflow-hidden" style="border-color:var(--line)">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
+            <th class="px-4 py-3 font-medium">Email</th>
+            <th class="px-4 py-3 font-medium">Rol</th>
+            <th class="px-4 py-3 font-medium">Nume</th>
+            <th class="px-4 py-3 font-medium">Filială</th>
+            <th class="px-4 py-3 font-medium">Magazine alocate</th>
+            <th class="px-4 py-3 font-medium"></th>
+          </tr>
+        </thead>
+        <tbody id="user-rows"></tbody>
+      </table>
+    </div>`;
+
+  const tbody = document.getElementById('user-rows');
+  tbody.innerHTML = profiles.map(p => userRow(p, magazine, assignments || [])).join('');
+
+  profiles.forEach(p => bindUserRow(p, magazine));
+}
+
+function userRow(p, magazine, assignments){
+  const isAgent = p.role === 'agent';
+  const isMagazin = p.role === 'magazin';
+  const assignedIds = assignments.filter(a => a.agent_id === p.id).map(a => a.magazin_id);
+
+  return `
+  <tr class="border-b last:border-0 align-top" style="border-color:var(--line)" data-row="${p.id}">
+    <td class="px-4 py-3">
+      <div class="font-medium text-slate-800">${esc(p.email)}</div>
+      <div class="text-xs text-slate-400">${new Date(p.created_at).toLocaleDateString('ro-RO')}</div>
+    </td>
+    <td class="px-4 py-3">
+      <select data-field="role" data-id="${p.id}" class="role-select border rounded-md px-2 py-1.5 text-sm">
+        <option value="" ${!p.role ? 'selected':''}>Fără rol</option>
+        <option value="magazin" ${p.role==='magazin'?'selected':''}>Magazin</option>
+        <option value="agent" ${p.role==='agent'?'selected':''}>Agent</option>
+        <option value="admin" ${p.role==='admin'?'selected':''}>Admin</option>
+        <option value="superadmin" ${p.role==='superadmin'?'selected':''}>Super Admin</option>
+      </select>
+    </td>
+    <td class="px-4 py-3">
+      <input data-field="nume" data-id="${p.id}" type="text" value="${esc(p.nume||'')}"
+        placeholder="${isAgent ? 'Nume agent' : isMagazin ? 'Ex: SatAn' : '—'}"
+        class="nume-input border rounded-md px-2 py-1.5 text-sm w-32" ${(!isAgent && !isMagazin) ? 'disabled':''}>
+    </td>
+    <td class="px-4 py-3">
+      <input data-field="filiala" data-id="${p.id}" type="text" value="${esc(p.filiala||'')}"
+        placeholder="Ex: Carei"
+        class="filiala-input border rounded-md px-2 py-1.5 text-sm w-28" ${!isMagazin ? 'disabled':''}>
+    </td>
+    <td class="px-4 py-3">
+      <div class="magazine-box ${isAgent ? '' : 'opacity-30 pointer-events-none'} max-h-24 overflow-y-auto space-y-1 w-44">
+        ${magazine.length === 0 ? '<span class="text-xs text-slate-400">Niciun magazin disponibil</span>' : magazine.map(m => `
+          <label class="flex items-center gap-1.5 text-xs">
+            <input type="checkbox" class="mag-check" data-magazin-id="${m.id}" ${assignedIds.includes(m.id) ? 'checked':''}>
+            <span>${esc(m.nume||m.email)}${m.filiala ? ' - ' + esc(m.filiala) : ''}</span>
+          </label>
+        `).join('')}
+      </div>
+    </td>
+    <td class="px-4 py-3">
+      <button data-save="${p.id}" class="save-btn btn-primary rounded-md px-3 py-1.5 text-xs">Salvează</button>
+    </td>
+  </tr>`;
+}
+
+function bindUserRow(p, magazine){
+  const row = document.querySelector(`tr[data-row="${p.id}"]`);
+  if (!row) return;
+
+  const roleSelect = row.querySelector('.role-select');
+  const numeInput = row.querySelector('.nume-input');
+  const filialaInput = row.querySelector('.filiala-input');
+  const magBox = row.querySelector('.magazine-box');
+
+  roleSelect.addEventListener('change', ()=>{
+    const role = roleSelect.value;
+    numeInput.disabled = !(role === 'agent' || role === 'magazin');
+    filialaInput.disabled = role !== 'magazin';
+    if (role === 'agent') magBox.classList.remove('opacity-30','pointer-events-none');
+    else magBox.classList.add('opacity-30','pointer-events-none');
+  });
+
+  row.querySelector('.save-btn').addEventListener('click', async ()=>{
+    const btn = row.querySelector('.save-btn');
+    btn.disabled = true; btn.textContent = 'Se salvează...';
+
+    const role = roleSelect.value || null;
+    const nume = numeInput.value.trim() || null;
+    const filiala = filialaInput.value.trim() || null;
+
+    const { error: upErr } = await supa.from('profiles').update({
+      role, nume, filiala, updated_at: new Date().toISOString()
+    }).eq('id', p.id);
+
+    if (upErr){
+      toast('Eroare: ' + upErr.message, true);
+      btn.disabled = false; btn.textContent = 'Salvează';
+      return;
+    }
+
+    if (role === 'agent'){
+      const checked = Array.from(row.querySelectorAll('.mag-check:checked')).map(c => c.dataset.magazinId);
+      await supa.from('agent_magazine').delete().eq('agent_id', p.id);
+      if (checked.length){
+        const rows = checked.map(magId => ({ agent_id: p.id, magazin_id: magId }));
+        const { error: linkErr } = await supa.from('agent_magazine').insert(rows);
+        if (linkErr) toast('Eroare la alocarea magazinelor: ' + linkErr.message, true);
+      }
+    }
+
+    toast('Salvat cu succes.');
+    btn.disabled = false; btn.textContent = 'Salvează';
+  });
+}
+</script>
+</body>
+</html>
