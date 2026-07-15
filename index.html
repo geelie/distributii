@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Distribuție Vehicule Electrice</title>
+<title>Distribuție</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -102,6 +102,12 @@ supa.auth.onAuthStateChange((event, session) => {
 });
 
 (async function init(){
+  const tokenHash = new URLSearchParams(window.location.search).get('token_hash');
+  const otpType = new URLSearchParams(window.location.search).get('type');
+  if (tokenHash && otpType) {
+    renderConfirmScreen(tokenHash, otpType);
+    return;
+  }
   const { data: { session } } = await supa.auth.getSession();
   if (session) {
     currentUser = session.user;
@@ -110,6 +116,53 @@ supa.auth.onAuthStateChange((event, session) => {
     renderAuthScreen();
   }
 })();
+
+// ==================================================================
+// ECRAN DE CONFIRMARE MANUALĂ (email verificare / resetare parolă)
+// Necesită un click explicit înainte de a valida tokenul, ca linkul
+// să nu fie "consumat" automat de scanerele anti-phishing ale emailurilor.
+// ==================================================================
+function renderConfirmScreen(tokenHash, type){
+  const isRecovery = type === 'recovery';
+  app.innerHTML = `
+  <div class="min-h-screen flex items-center justify-center px-4" style="background:radial-gradient(circle at 20% 20%, #1B2430 0%, #0E1318 65%);">
+    <div class="w-full max-w-md">
+      <div class="bg-white rounded-2xl shadow-xl p-6 fade-in text-center">
+        <h2 class="text-lg font-bold mb-2">${isRecovery ? 'Resetare parolă' : 'Confirmare cont'}</h2>
+        <p class="text-sm text-slate-500 mb-5">${isRecovery ? 'Apasă butonul de mai jos pentru a continua resetarea parolei.' : 'Apasă butonul de mai jos pentru a-ți confirma adresa de email.'}</p>
+        <button id="btn-confirm-otp" class="w-full btn-primary rounded-lg py-2.5 text-sm">${isRecovery ? 'Continuă' : 'Confirmă contul'}</button>
+        <p id="confirm-msg" class="text-sm text-center mt-3"></p>
+      </div>
+    </div>
+  </div>`;
+
+  document.getElementById('btn-confirm-otp').addEventListener('click', async ()=>{
+    const btn = document.getElementById('btn-confirm-otp');
+    const msg = document.getElementById('confirm-msg');
+    btn.disabled = true; btn.textContent = 'Se verifică...';
+
+    const { error } = await supa.auth.verifyOtp({ token_hash: tokenHash, type });
+
+    // curăță parametrii din URL, ca linkul să nu mai poată fi refolosit din istoric
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    if (error) {
+      msg.className = 'text-sm text-center text-red-600 mt-3';
+      msg.textContent = 'Linkul nu mai este valid. Cere un link nou.';
+      btn.disabled = false; btn.textContent = isRecovery ? 'Continuă' : 'Confirmă contul';
+      return;
+    }
+
+    if (isRecovery) {
+      recoveryMode = true;
+      renderResetPassword();
+    } else {
+      await supa.auth.signOut();
+      renderAuthScreen('login');
+      toast('Cont confirmat cu succes. Te poți autentifica.');
+    }
+  });
+}
 
 async function loadProfileAndRender(){
   const { data, error } = await supa.from('profiles').select('*').eq('id', currentUser.id).single();
@@ -215,7 +268,10 @@ function bindSignupForm(){
       return;
     }
     btn.disabled = true;
-    const { error } = await supa.auth.signUp({ email, password: pass });
+    const { error } = await supa.auth.signUp({
+      email, password: pass,
+      options: { emailRedirectTo: window.location.origin + window.location.pathname }
+    });
     btn.disabled = false;
     if (error){
       msg.className = 'text-sm text-center text-red-600';
@@ -481,8 +537,8 @@ function userRow(p, magazine, assignments, viewerIsSuperadmin){
     </td>
     <td class="px-4 py-3">
       <input data-field="nume" data-id="${p.id}" type="text" value="${esc(p.nume||'')}"
-        placeholder="${isAgent ? 'Nume agent' : isMagazin ? 'Ex: SatAn' : '—'}"
-        class="nume-input border rounded-md px-2 py-1.5 text-sm w-32" ${(!isAgent && !isMagazin) ? 'disabled':''}>
+        placeholder="${isAgent ? 'Nume agent' : isMagazin ? 'Ex: SatAn' : (p.role==='admin'||p.role==='superadmin') ? 'Nume (opțional)' : '—'}"
+        class="nume-input border rounded-md px-2 py-1.5 text-sm w-32" ${!p.role ? 'disabled':''}>
     </td>
     <td class="px-4 py-3">
       <input data-field="filiala" data-id="${p.id}" type="text" value="${esc(p.filiala||'')}"
@@ -547,7 +603,7 @@ function bindUserRow(p, magazine, viewerIsSuperadmin){
 
   roleSelect.addEventListener('change', ()=>{
     const role = roleSelect.value;
-    numeInput.disabled = !(role === 'agent' || role === 'magazin');
+    numeInput.disabled = !role;
     filialaInput.disabled = role !== 'magazin';
     if (role === 'agent') magBox.classList.remove('opacity-30','pointer-events-none');
     else magBox.classList.add('opacity-30','pointer-events-none');
