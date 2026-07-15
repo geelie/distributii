@@ -216,7 +216,14 @@ function bindSignupForm(){
       return;
     }
     btn.disabled = true;
-    const { error } = await supa.auth.signUp({ email, password: pass });
+    const { error } = await supa.auth.signUp({ 
+  email, 
+  password: pass,
+  options: {
+    // Va prelua automat URL-ul exact pe care te afli (ex: https://geelie.github.io/distributii/index.html)
+    emailRedirectTo: window.location.origin + window.location.pathname
+  }
+});
     btn.disabled = false;
     if (error){
       msg.className = 'text-sm text-center text-red-600';
