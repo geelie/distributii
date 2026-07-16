@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Distribuție</title>
+<title>Distribuție Vehicule Electrice</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -377,15 +377,17 @@ function renderShell(){
   const tabs = tabsForRole(currentProfile.role);
 
   app.innerHTML = `
-  <div class="min-h-screen flex">
-    <aside class="w-60 shrink-0 text-white flex flex-col" style="background:var(--graphite)">
+  <div class="min-h-screen md:flex">
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/40 z-20 hidden"></div>
+    <aside id="app-sidebar" class="w-64 md:w-60 shrink-0 text-white flex flex-col fixed md:static inset-y-0 left-0 z-30 -translate-x-full md:translate-x-0 transition-transform duration-200 ease-out" style="background:var(--graphite)">
       <div class="px-5 py-5 flex items-center gap-2 border-b border-white/10">
         <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background:var(--teal)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="#0A1210"/></svg>
         </div>
         <span class="brand font-extrabold tracking-tight">EV Distribuție</span>
+        <button id="btn-close-sidebar" class="ml-auto md:hidden text-slate-400 hover:text-white text-xl leading-none px-1">✕</button>
       </div>
-      <nav id="side-nav" class="flex-1 px-3 py-4 space-y-1"></nav>
+      <nav id="side-nav" class="flex-1 px-3 py-4 space-y-1 overflow-y-auto"></nav>
       <div class="px-4 py-4 border-t border-white/10">
         <div class="text-xs text-slate-400 mb-0.5">${esc(currentProfile.email)}</div>
         <div class="mb-3 flex items-center gap-1.5 flex-wrap">
@@ -395,7 +397,7 @@ function renderShell(){
             : (currentProfile.nume ? `<span class="text-xs text-slate-300">${esc(currentProfile.nume)}</span>` : '')
           }
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
           <button id="btn-change-pass" class="text-xs text-slate-300 hover:text-white underline">Schimbă parola</button>
           <span class="text-slate-600 text-xs">·</span>
           <button id="btn-logout" class="text-xs text-slate-300 hover:text-white underline">Deconectare</button>
@@ -403,12 +405,25 @@ function renderShell(){
       </div>
     </aside>
     <main class="flex-1 min-w-0">
-      <header class="bg-white border-b px-6 py-4" style="border-color:var(--line)">
-        <h1 id="page-title" class="text-lg font-bold text-slate-800"></h1>
+      <header class="bg-white border-b px-4 md:px-6 py-4 flex items-center gap-3" style="border-color:var(--line)">
+        <button id="btn-open-sidebar" class="md:hidden text-slate-600 hover:text-slate-900 text-xl leading-none px-1" aria-label="Deschide meniul">☰</button>
+        <h1 id="page-title" class="text-base md:text-lg font-bold text-slate-800"></h1>
       </header>
-      <div id="page-content" class="p-6"></div>
+      <div id="page-content" class="p-4 md:p-6"></div>
     </main>
   </div>`;
+
+  function openSidebar(){
+    document.getElementById('app-sidebar').classList.remove('-translate-x-full');
+    document.getElementById('sidebar-overlay').classList.remove('hidden');
+  }
+  function closeSidebar(){
+    document.getElementById('app-sidebar').classList.add('-translate-x-full');
+    document.getElementById('sidebar-overlay').classList.add('hidden');
+  }
+  document.getElementById('btn-open-sidebar').addEventListener('click', openSidebar);
+  document.getElementById('btn-close-sidebar').addEventListener('click', closeSidebar);
+  document.getElementById('sidebar-overlay').addEventListener('click', closeSidebar);
 
   const nav = document.getElementById('side-nav');
   nav.innerHTML = tabs.map((t,i)=>`
@@ -419,6 +434,7 @@ function renderShell(){
       nav.querySelectorAll('.nav-btn').forEach(b=> b.className = 'nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/5');
       btn.className = 'nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium bg-white/10 text-white';
       openTab(btn.dataset.key, tabs);
+      closeSidebar();
     });
   });
   document.getElementById('btn-logout').addEventListener('click', async ()=>{
@@ -554,8 +570,8 @@ async function renderUserAdmin(container){
   const viewerIsSuperadmin = currentProfile.role === 'superadmin';
 
   container.innerHTML = `
-    <div class="bg-white rounded-xl border overflow-hidden" style="border-color:var(--line)">
-      <table class="w-full text-sm">
+    <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
+      <table class="w-full text-sm min-w-[760px]">
         <thead>
           <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
             <th class="px-4 py-3 font-medium">Email</th>
