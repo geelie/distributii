@@ -590,7 +590,7 @@ function renderBillingAddressModal(p, billingBtn){
     p.adresa_facturare = value;
     if (billingBtn){
       billingBtn.textContent = value ? '✓ Adresă facturare' : '+ Adaugă adresă';
-      billingBtn.className = `billing-btn rounded-md px-3 py-1.5 text-xs font-semibold ${value ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`;
+      billingBtn.className = `billing-btn whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold ${value ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`;
     }
 
     overlay.remove();
@@ -693,7 +693,7 @@ function userRow(p, magazine, assignments, viewerIsSuperadmin){
     </td>
     <td class="px-4 py-3">
       ${isMagazin ? `
-        <button data-billing="${p.id}" class="billing-btn rounded-md px-3 py-1.5 text-xs font-semibold ${p.adresa_facturare ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
+        <button data-billing="${p.id}" class="billing-btn whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold ${p.adresa_facturare ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
           ${p.adresa_facturare ? '✓ Adresă facturare' : '+ Adaugă adresă'}
         </button>
       ` : '<span class="text-slate-300 text-xs">—</span>'}
