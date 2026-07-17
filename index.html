@@ -539,6 +539,65 @@ function renderChangePasswordModal(){
   });
 }
 
+// ==================================================================
+// MODAL ADRESĂ DE FACTURARE (pentru conturi de tip magazin)
+// ==================================================================
+function renderBillingAddressModal(p, billingBtn){
+  const overlay = document.createElement('div');
+  overlay.id = 'billing-address-overlay';
+  overlay.className = 'fixed inset-0 z-40 flex items-center justify-center px-4';
+  overlay.style.background = 'rgba(15,20,25,0.55)';
+  overlay.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm fade-in">
+      <h2 class="text-lg font-bold mb-1">Adresă de facturare</h2>
+      <p class="text-sm text-slate-500 mb-5">Pentru magazinul ${esc(p.nume || p.email)}${p.filiala ? ' - ' + esc(p.filiala) : ''}. Va fi folosită ulterior la comenzi.</p>
+      <form id="form-billing-address" class="space-y-4">
+        <div>
+          ${fieldLabel('Adresă de facturare')}
+          <textarea id="billing-address-input" rows="4" class="${inputBase()}" placeholder="Ex: Str. Exemplu nr. 1, Carei, jud. Satu Mare">${esc(p.adresa_facturare || '')}</textarea>
+        </div>
+        <div class="flex gap-2 pt-1">
+          <button type="button" id="billing-address-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
+          <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Salvează</button>
+        </div>
+        <p id="billing-address-msg" class="text-sm text-center"></p>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  document.getElementById('billing-address-cancel').addEventListener('click', ()=> overlay.remove());
+  overlay.addEventListener('click', (e)=>{ if (e.target === overlay) overlay.remove(); });
+
+  document.getElementById('form-billing-address').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const msg = document.getElementById('billing-address-msg');
+    const value = document.getElementById('billing-address-input').value.trim() || null;
+
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = 'Se salvează...';
+
+    const { error } = await supa.from('profiles').update({
+      adresa_facturare: value, updated_at: new Date().toISOString()
+    }).eq('id', p.id);
+
+    if (error){
+      msg.className = 'text-sm text-center text-red-600';
+      msg.textContent = error.message;
+      btn.disabled = false; btn.textContent = 'Salvează';
+      return;
+    }
+
+    p.adresa_facturare = value;
+    if (billingBtn){
+      billingBtn.textContent = value ? '✓ Adresă facturare' : '+ Adaugă adresă';
+      billingBtn.className = `billing-btn rounded-md px-3 py-1.5 text-xs font-semibold ${value ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`;
+    }
+
+    overlay.remove();
+    toast('Adresa de facturare a fost salvată.');
+  });
+}
+
 function renderPendingRole(){
   app.innerHTML = `
   <div class="min-h-screen flex items-center justify-center px-4" style="background:var(--bg)">
@@ -571,13 +630,15 @@ async function renderUserAdmin(container){
 
   container.innerHTML = `
     <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
-      <table class="w-full text-sm min-w-[760px]">
+      <table class="w-full text-sm min-w-[980px]">
         <thead>
           <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
             <th class="px-4 py-3 font-medium">Email</th>
             <th class="px-4 py-3 font-medium">Rol</th>
             <th class="px-4 py-3 font-medium">Nume</th>
+            <th class="px-4 py-3 font-medium">Telefon</th>
             <th class="px-4 py-3 font-medium">Filială</th>
+            <th class="px-4 py-3 font-medium">Facturare</th>
             <th class="px-4 py-3 font-medium">Magazine alocate</th>
             <th class="px-4 py-3 font-medium"></th>
           </tr>
@@ -621,9 +682,21 @@ function userRow(p, magazine, assignments, viewerIsSuperadmin){
         class="nume-input border rounded-md px-2 py-1.5 text-sm w-32" ${!p.role ? 'disabled':''}>
     </td>
     <td class="px-4 py-3">
+      <input data-field="telefon" data-id="${p.id}" type="tel" value="${esc(p.telefon||'')}"
+        placeholder="Opțional"
+        class="telefon-input border rounded-md px-2 py-1.5 text-sm w-28" ${!p.role ? 'disabled':''}>
+    </td>
+    <td class="px-4 py-3">
       <input data-field="filiala" data-id="${p.id}" type="text" value="${esc(p.filiala||'')}"
         placeholder="Ex: Carei"
         class="filiala-input border rounded-md px-2 py-1.5 text-sm w-28" ${!isMagazin ? 'disabled':''}>
+    </td>
+    <td class="px-4 py-3">
+      ${isMagazin ? `
+        <button data-billing="${p.id}" class="billing-btn rounded-md px-3 py-1.5 text-xs font-semibold ${p.adresa_facturare ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
+          ${p.adresa_facturare ? '✓ Adresă facturare' : '+ Adaugă adresă'}
+        </button>
+      ` : '<span class="text-slate-300 text-xs">—</span>'}
     </td>
     <td class="px-4 py-3">
       <div class="magazine-box ${isAgent ? '' : 'opacity-30 pointer-events-none'} max-h-24 overflow-y-auto space-y-1 w-44">
@@ -652,9 +725,17 @@ function bindUserRow(p, magazine, viewerIsSuperadmin){
 
   const roleSelect = row.querySelector('.role-select');
   const numeInput = row.querySelector('.nume-input');
+  const telefonInput = row.querySelector('.telefon-input');
   const filialaInput = row.querySelector('.filiala-input');
   const magBox = row.querySelector('.magazine-box');
   const deleteBtn = row.querySelector('.delete-btn');
+  const billingBtn = row.querySelector('.billing-btn');
+
+  if (billingBtn){
+    billingBtn.addEventListener('click', ()=>{
+      renderBillingAddressModal(p, billingBtn);
+    });
+  }
 
   if (deleteBtn && !deleteBtn.disabled){
     deleteBtn.addEventListener('click', async ()=>{
@@ -684,6 +765,7 @@ function bindUserRow(p, magazine, viewerIsSuperadmin){
   roleSelect.addEventListener('change', ()=>{
     const role = roleSelect.value;
     numeInput.disabled = !role;
+    telefonInput.disabled = !role;
     filialaInput.disabled = role !== 'magazin';
     if (role === 'agent') magBox.classList.remove('opacity-30','pointer-events-none');
     else magBox.classList.add('opacity-30','pointer-events-none');
@@ -705,10 +787,11 @@ function bindUserRow(p, magazine, viewerIsSuperadmin){
 
     const role = roleSelect.value || null;
     const nume = numeInput.value.trim() || null;
+    const telefon = telefonInput.value.trim() || null;
     const filiala = filialaInput.value.trim() || null;
 
     const { error: upErr } = await supa.from('profiles').update({
-      role, nume, filiala, updated_at: new Date().toISOString()
+      role, nume, telefon, filiala, updated_at: new Date().toISOString()
     }).eq('id', p.id);
 
     if (upErr){
