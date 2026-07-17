@@ -590,7 +590,7 @@ function renderBillingAddressModal(p, billingBtn){
     p.adresa_facturare = value;
     if (billingBtn){
       billingBtn.innerHTML = value ? '✓ Adresă<br>facturare' : '+ Adaugă<br>adresă';
-      billingBtn.className = `billing-btn whitespace-nowrap w-20 text-center rounded-md px-2 py-1.5 text-xs font-semibold leading-tight ${value ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`;
+      billingBtn.className = `billing-btn whitespace-nowrap w-20 h-[34px] flex flex-col items-center justify-center rounded-md text-center text-[10px] leading-[1.1] font-semibold ${value ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`;
     }
 
     overlay.remove();
@@ -693,7 +693,7 @@ function userRow(p, magazine, assignments, viewerIsSuperadmin){
     </td>
     <td class="px-4 py-3">
       ${isMagazin ? `
-        <button data-billing="${p.id}" class="billing-btn whitespace-nowrap w-20 text-center rounded-md px-2 py-1.5 text-xs font-semibold leading-tight ${p.adresa_facturare ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
+        <button data-billing="${p.id}" class="billing-btn whitespace-nowrap w-20 h-[34px] flex flex-col items-center justify-center rounded-md text-center text-[10px] leading-[1.1] font-semibold ${p.adresa_facturare ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
           ${p.adresa_facturare ? '✓ Adresă<br>facturare' : '+ Adaugă<br>adresă'}
         </button>
       ` : '<span class="text-slate-300 text-xs">—</span>'}
