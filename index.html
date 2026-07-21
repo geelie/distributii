@@ -1,181 +1,280 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ro">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Distribuție Vehicule Electrice</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --graphite:#161B22;
-    --graphite-2:#20272F;
-    --teal:#0FBF9F;
-    --teal-dark:#0B9B82;
-    --amber:#F0A93B;
-    --bg:#F5F7F8;
-    --line:#E3E7E9;
-  }
-  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);}
-  h1,h2,h3,.brand{font-family:'Manrope',system-ui,sans-serif;}
-  .btn-primary{background:var(--teal);color:#0A1210;font-weight:700;}
-  .btn-primary:hover{background:var(--teal-dark);}
-  .btn-primary:disabled{opacity:.5;cursor:not-allowed;}
-  .tab-active{border-bottom:2px solid var(--teal);color:#111827;}
-  .tab-inactive{border-bottom:2px solid transparent;color:#6B7280;}
-  .role-pill{font-size:11px;font-weight:700;letter-spacing:.03em;padding:2px 8px;border-radius:999px;}
-  .role-magazin{background:#E6F4FF;color:#1D6FA5;}
-  .role-agent{background:#EAF7F0;color:#0B8A5F;}
-  .role-admin{background:#FFF1DE;color:#B4650B;}
-  .role-superadmin{background:#F3E8FF;color:#7C3AED;}
-  .role-none{background:#F1F2F4;color:#8A8F98;}
-  ::-webkit-scrollbar{width:8px;height:8px;}
-  ::-webkit-scrollbar-thumb{background:#D3D8DA;border-radius:4px;}
-  .fade-in{animation:fadeIn .25s ease;}
-  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-</style>
-</head>
-<body class="min-h-screen">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Distribuție Vehicule Electrice</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --graphite: #161b22;
+        --graphite-2: #20272f;
+        --teal: #0fbf9f;
+        --teal-dark: #0b9b82;
+        --amber: #f0a93b;
+        --bg: #f5f7f8;
+        --line: #e3e7e9;
+      }
+      body {
+        font-family: "Inter", system-ui, sans-serif;
+        background: var(--bg);
+      }
+      h1,
+      h2,
+      h3,
+      .brand {
+        font-family: "Manrope", system-ui, sans-serif;
+      }
+      .btn-primary {
+        background: var(--teal);
+        color: #0a1210;
+        font-weight: 700;
+      }
+      .btn-primary:hover {
+        background: var(--teal-dark);
+      }
+      .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .tab-active {
+        border-bottom: 2px solid var(--teal);
+        color: #111827;
+      }
+      .tab-inactive {
+        border-bottom: 2px solid transparent;
+        color: #6b7280;
+      }
+      .role-pill {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+      .role-magazin {
+        background: #e6f4ff;
+        color: #1d6fa5;
+      }
+      .role-agent {
+        background: #eaf7f0;
+        color: #0b8a5f;
+      }
+      .role-admin {
+        background: #fff1de;
+        color: #b4650b;
+      }
+      .role-superadmin {
+        background: #f3e8ff;
+        color: #7c3aed;
+      }
+      .role-none {
+        background: #f1f2f4;
+        color: #8a8f98;
+      }
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #d3d8da;
+        border-radius: 4px;
+      }
+      .fade-in {
+        animation: fadeIn 0.25s ease;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    </style>
+  </head>
+  <body class="min-h-screen">
+    <!-- ============================================================ -->
+    <!-- CONFIG SUPABASE — completează cu datele proiectului tău      -->
+    <!-- ============================================================ -->
+    <script>
+      const SUPABASE_URL = "https://ksjvpuyiuplaonpbwrfn.supabase.co";
+      const SUPABASE_ANON_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzanZwdXlpdXBsYW9ucGJ3cmZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMDgyNDEsImV4cCI6MjA5OTY4NDI0MX0._Wp1Ty4KBFJORjmI41S5eFfVulZJyhMr0ODGykn49uM";
+      const supa = window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+      );
+    </script>
 
-<!-- ============================================================ -->
-<!-- CONFIG SUPABASE — completează cu datele proiectului tău      -->
-<!-- ============================================================ -->
-<script>
-  const SUPABASE_URL = 'https://ksjvpuyiuplaonpbwrfn.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzanZwdXlpdXBsYW9ucGJ3cmZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMDgyNDEsImV4cCI6MjA5OTY4NDI0MX0._Wp1Ty4KBFJORjmI41S5eFfVulZJyhMr0ODGykn49uM';
-  const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-</script>
+    <div id="app" class="min-h-screen"></div>
 
-<div id="app" class="min-h-screen"></div>
+    <script>
+      const app = document.getElementById("app");
+      let currentUser = null;
+      let currentProfile = null;
+      let recoveryMode = false;
 
-<script>
-const app = document.getElementById('app');
-let currentUser = null;
-let currentProfile = null;
-let recoveryMode = false;
+      // ------------------------------------------------------------------
+      // UTIL
+      // ------------------------------------------------------------------
+      function esc(str) {
+        if (str === null || str === undefined) return "";
+        return String(str).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      }
+      function toast(msg, isError = false) {
+        const el = document.createElement("div");
+        el.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium fade-in ${isError ? "bg-red-600 text-white" : "bg-[var(--graphite)] text-white"}`;
+        el.textContent = msg;
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 3500);
+      }
+      function rolePill(role) {
+        const map = {
+          magazin: ["Magazin", "role-magazin"],
+          agent: ["Agent", "role-agent"],
+          admin: ["Admin", "role-admin"],
+          superadmin: ["Super Admin", "role-superadmin"],
+        };
+        const [label, cls] = map[role] || ["Fără rol", "role-none"];
+        return `<span class="role-pill ${cls}">${label}</span>`;
+      }
 
-// ------------------------------------------------------------------
-// UTIL
-// ------------------------------------------------------------------
-function esc(str){
-  if(str === null || str === undefined) return '';
-  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-function toast(msg, isError=false){
-  const el = document.createElement('div');
-  el.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium fade-in ${isError ? 'bg-red-600 text-white' : 'bg-[var(--graphite)] text-white'}`;
-  el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(()=> el.remove(), 3500);
-}
-function rolePill(role){
-  const map = {
-    magazin: ['Magazin','role-magazin'],
-    agent: ['Agent','role-agent'],
-    admin: ['Admin','role-admin'],
-    superadmin: ['Super Admin','role-superadmin'],
-  };
-  const [label, cls] = map[role] || ['Fără rol','role-none'];
-  return `<span class="role-pill ${cls}">${label}</span>`;
-}
+      // ------------------------------------------------------------------
+      // BOOTSTRAP — verifică sesiunea existentă și ascultă schimbări
+      // ------------------------------------------------------------------
+      supa.auth.onAuthStateChange((event, session) => {
+        if (event === "PASSWORD_RECOVERY") {
+          recoveryMode = true;
+          renderResetPassword();
+          return;
+        }
+        if (event === "SIGNED_OUT") {
+          currentUser = null;
+          currentProfile = null;
+          renderAuthScreen();
+          return;
+        }
+        if (session && !recoveryMode) {
+          currentUser = session.user;
+          loadProfileAndRender();
+        }
+      });
 
-// ------------------------------------------------------------------
-// BOOTSTRAP — verifică sesiunea existentă și ascultă schimbări
-// ------------------------------------------------------------------
-supa.auth.onAuthStateChange((event, session) => {
-  if (event === 'PASSWORD_RECOVERY') {
-    recoveryMode = true;
-    renderResetPassword();
-    return;
-  }
-  if (event === 'SIGNED_OUT') {
-    currentUser = null; currentProfile = null;
-    renderAuthScreen();
-    return;
-  }
-  if (session && !recoveryMode) {
-    currentUser = session.user;
-    loadProfileAndRender();
-  }
-});
+      (async function init() {
+        const tokenHash = new URLSearchParams(window.location.search).get(
+          "token_hash",
+        );
+        const otpType = new URLSearchParams(window.location.search).get("type");
+        if (tokenHash && otpType) {
+          renderConfirmScreen(tokenHash, otpType);
+          return;
+        }
+        const {
+          data: { session },
+        } = await supa.auth.getSession();
+        if (session) {
+          currentUser = session.user;
+          await loadProfileAndRender();
+        } else {
+          renderAuthScreen();
+        }
+      })();
 
-(async function init(){
-  const tokenHash = new URLSearchParams(window.location.search).get('token_hash');
-  const otpType = new URLSearchParams(window.location.search).get('type');
-  if (tokenHash && otpType) {
-    renderConfirmScreen(tokenHash, otpType);
-    return;
-  }
-  const { data: { session } } = await supa.auth.getSession();
-  if (session) {
-    currentUser = session.user;
-    await loadProfileAndRender();
-  } else {
-    renderAuthScreen();
-  }
-})();
-
-// ==================================================================
-// ECRAN DE CONFIRMARE MANUALĂ (email verificare / resetare parolă)
-// Necesită un click explicit înainte de a valida tokenul, ca linkul
-// să nu fie "consumat" automat de scanerele anti-phishing ale emailurilor.
-// ==================================================================
-function renderConfirmScreen(tokenHash, type){
-  const isRecovery = type === 'recovery';
-  app.innerHTML = `
+      // ==================================================================
+      // ECRAN DE CONFIRMARE MANUALĂ (email verificare / resetare parolă)
+      // Necesită un click explicit înainte de a valida tokenul, ca linkul
+      // să nu fie "consumat" automat de scanerele anti-phishing ale emailurilor.
+      // ==================================================================
+      function renderConfirmScreen(tokenHash, type) {
+        const isRecovery = type === "recovery";
+        app.innerHTML = `
   <div class="min-h-screen flex items-center justify-center px-4" style="background:radial-gradient(circle at 20% 20%, #1B2430 0%, #0E1318 65%);">
     <div class="w-full max-w-md">
       <div class="bg-white rounded-2xl shadow-xl p-6 fade-in text-center">
-        <h2 class="text-lg font-bold mb-2">${isRecovery ? 'Resetare parolă' : 'Confirmare cont'}</h2>
-        <p class="text-sm text-slate-500 mb-5">${isRecovery ? 'Apasă butonul de mai jos pentru a continua resetarea parolei.' : 'Apasă butonul de mai jos pentru a-ți confirma adresa de email.'}</p>
-        <button id="btn-confirm-otp" class="w-full btn-primary rounded-lg py-2.5 text-sm">${isRecovery ? 'Continuă' : 'Confirmă contul'}</button>
+        <h2 class="text-lg font-bold mb-2">${isRecovery ? "Resetare parolă" : "Confirmare cont"}</h2>
+        <p class="text-sm text-slate-500 mb-5">${isRecovery ? "Apasă butonul de mai jos pentru a continua resetarea parolei." : "Apasă butonul de mai jos pentru a-ți confirma adresa de email."}</p>
+        <button id="btn-confirm-otp" class="w-full btn-primary rounded-lg py-2.5 text-sm">${isRecovery ? "Continuă" : "Confirmă contul"}</button>
         <p id="confirm-msg" class="text-sm text-center mt-3"></p>
       </div>
     </div>
   </div>`;
 
-  document.getElementById('btn-confirm-otp').addEventListener('click', async ()=>{
-    const btn = document.getElementById('btn-confirm-otp');
-    const msg = document.getElementById('confirm-msg');
-    btn.disabled = true; btn.textContent = 'Se verifică...';
+        document
+          .getElementById("btn-confirm-otp")
+          .addEventListener("click", async () => {
+            const btn = document.getElementById("btn-confirm-otp");
+            const msg = document.getElementById("confirm-msg");
+            btn.disabled = true;
+            btn.textContent = "Se verifică...";
 
-    const { error } = await supa.auth.verifyOtp({ token_hash: tokenHash, type });
+            const { error } = await supa.auth.verifyOtp({
+              token_hash: tokenHash,
+              type,
+            });
 
-    // curăță parametrii din URL, ca linkul să nu mai poată fi refolosit din istoric
-    window.history.replaceState({}, document.title, window.location.pathname);
+            // curăță parametrii din URL, ca linkul să nu mai poată fi refolosit din istoric
+            window.history.replaceState(
+              {},
+              document.title,
+              window.location.pathname,
+            );
 
-    if (error) {
-      msg.className = 'text-sm text-center text-red-600 mt-3';
-      msg.textContent = 'Linkul nu mai este valid. Cere un link nou.';
-      btn.disabled = false; btn.textContent = isRecovery ? 'Continuă' : 'Confirmă contul';
-      return;
-    }
+            if (error) {
+              msg.className = "text-sm text-center text-red-600 mt-3";
+              msg.textContent = "Linkul nu mai este valid. Cere un link nou.";
+              btn.disabled = false;
+              btn.textContent = isRecovery ? "Continuă" : "Confirmă contul";
+              return;
+            }
 
-    if (isRecovery) {
-      recoveryMode = true;
-      renderResetPassword();
-    } else {
-      await supa.auth.signOut();
-      renderAuthScreen('login');
-      toast('Cont confirmat cu succes. Te poți autentifica.');
-    }
-  });
-}
+            if (isRecovery) {
+              recoveryMode = true;
+              renderResetPassword();
+            } else {
+              await supa.auth.signOut();
+              renderAuthScreen("login");
+              toast("Cont confirmat cu succes. Te poți autentifica.");
+            }
+          });
+      }
 
-async function loadProfileAndRender(){
-  const { data, error } = await supa.from('profiles').select('*').eq('id', currentUser.id).single();
-  if (error) { toast('Eroare la încărcarea profilului: ' + error.message, true); }
-  currentProfile = data || null;
-  renderShell();
-}
+      async function loadProfileAndRender() {
+        const { data, error } = await supa
+          .from("profiles")
+          .select("*")
+          .eq("id", currentUser.id)
+          .single();
+        if (error) {
+          toast("Eroare la încărcarea profilului: " + error.message, true);
+        }
+        currentProfile = data || null;
+        renderShell();
+      }
 
-// ==================================================================
-// ECRAN AUTENTIFICARE (Autentificare / Cont nou / Am uitat parola)
-// ==================================================================
-function renderAuthScreen(mode='login'){
-  app.innerHTML = `
+      // ==================================================================
+      // ECRAN AUTENTIFICARE (Autentificare / Cont nou / Am uitat parola)
+      // ==================================================================
+      function renderAuthScreen(mode = "login") {
+        app.innerHTML = `
   <div class="min-h-screen flex items-center justify-center px-4" style="background:radial-gradient(circle at 20% 20%, #1B2430 0%, #0E1318 65%);">
     <div class="w-full max-w-md">
       <div class="text-center mb-8">
@@ -190,9 +289,9 @@ function renderAuthScreen(mode='login'){
 
       <div class="bg-white rounded-2xl shadow-xl p-6 fade-in">
         <div class="flex text-sm font-semibold mb-6 border-b" style="border-color:var(--line)">
-          <button data-tab="login" class="auth-tab px-3 py-2 -mb-px ${mode==='login'?'tab-active':'tab-inactive'}">Autentificare</button>
-          <button data-tab="signup" class="auth-tab px-3 py-2 -mb-px ${mode==='signup'?'tab-active':'tab-inactive'}">Cont nou</button>
-          <button data-tab="forgot" class="auth-tab px-3 py-2 -mb-px ${mode==='forgot'?'tab-active':'tab-inactive'}">Am uitat parola</button>
+          <button data-tab="login" class="auth-tab px-3 py-2 -mb-px ${mode === "login" ? "tab-active" : "tab-inactive"}">Autentificare</button>
+          <button data-tab="signup" class="auth-tab px-3 py-2 -mb-px ${mode === "signup" ? "tab-active" : "tab-inactive"}">Cont nou</button>
+          <button data-tab="forgot" class="auth-tab px-3 py-2 -mb-px ${mode === "forgot" ? "tab-active" : "tab-inactive"}">Am uitat parola</button>
         </div>
         <div id="auth-panel"></div>
       </div>
@@ -200,133 +299,156 @@ function renderAuthScreen(mode='login'){
     </div>
   </div>`;
 
-  document.querySelectorAll('.auth-tab').forEach(btn=>{
-    btn.addEventListener('click', ()=> renderAuthScreen(btn.dataset.tab));
-  });
+        document.querySelectorAll(".auth-tab").forEach((btn) => {
+          btn.addEventListener("click", () =>
+            renderAuthScreen(btn.dataset.tab),
+          );
+        });
 
-  const panel = document.getElementById('auth-panel');
-  if (mode === 'login') panel.innerHTML = loginForm();
-  if (mode === 'signup') panel.innerHTML = signupForm();
-  if (mode === 'forgot') panel.innerHTML = forgotForm();
+        const panel = document.getElementById("auth-panel");
+        if (mode === "login") panel.innerHTML = loginForm();
+        if (mode === "signup") panel.innerHTML = signupForm();
+        if (mode === "forgot") panel.innerHTML = forgotForm();
 
-  if (mode === 'login') bindLoginForm();
-  if (mode === 'signup') bindSignupForm();
-  if (mode === 'forgot') bindForgotForm();
-}
+        if (mode === "login") bindLoginForm();
+        if (mode === "signup") bindSignupForm();
+        if (mode === "forgot") bindForgotForm();
+      }
 
-function fieldLabel(txt){ return `<label class="block text-sm font-medium text-slate-700 mb-1">${txt}</label>`; }
-function inputBase(){ return 'w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--teal)] focus:border-transparent'; }
+      function fieldLabel(txt) {
+        return `<label class="block text-sm font-medium text-slate-700 mb-1">${txt}</label>`;
+      }
+      function inputBase() {
+        return "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--teal)] focus:border-transparent";
+      }
 
-function loginForm(){
-  return `
+      function loginForm() {
+        return `
   <form id="form-login" class="space-y-4">
-    <div>${fieldLabel('Email')}<input type="email" id="login-email" required class="${inputBase()}" placeholder="nume@exemplu.ro"></div>
-    <div>${fieldLabel('Parolă')}<input type="password" id="login-pass" required class="${inputBase()}" placeholder="••••••••"></div>
+    <div>${fieldLabel("Email")}<input type="email" id="login-email" required class="${inputBase()}" placeholder="nume@exemplu.ro"></div>
+    <div>${fieldLabel("Parolă")}<input type="password" id="login-pass" required class="${inputBase()}" placeholder="••••••••"></div>
     <button type="submit" class="w-full btn-primary rounded-lg py-2.5 text-sm">Autentificare</button>
     <p id="login-msg" class="text-sm text-center"></p>
   </form>`;
-}
-function bindLoginForm(){
-  document.getElementById('form-login').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const btn = e.target.querySelector('button');
-    btn.disabled = true;
-    const email = document.getElementById('login-email').value.trim();
-    const password = document.getElementById('login-pass').value;
-    const { error } = await supa.auth.signInWithPassword({ email, password });
-    btn.disabled = false;
-    const msg = document.getElementById('login-msg');
-    if (error){
-      msg.className = 'text-sm text-center text-red-600';
-      msg.textContent = error.message.includes('Invalid login') ? 'Email sau parolă incorectă.' : error.message;
-    }
-  });
-}
+      }
+      function bindLoginForm() {
+        document
+          .getElementById("form-login")
+          .addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector("button");
+            btn.disabled = true;
+            const email = document.getElementById("login-email").value.trim();
+            const password = document.getElementById("login-pass").value;
+            const { error } = await supa.auth.signInWithPassword({
+              email,
+              password,
+            });
+            btn.disabled = false;
+            const msg = document.getElementById("login-msg");
+            if (error) {
+              msg.className = "text-sm text-center text-red-600";
+              msg.textContent = error.message.includes("Invalid login")
+                ? "Email sau parolă incorectă."
+                : error.message;
+            }
+          });
+      }
 
-function signupForm(){
-  return `
+      function signupForm() {
+        return `
   <form id="form-signup" class="space-y-4">
-    <div>${fieldLabel('Email')}<input type="email" id="signup-email" required class="${inputBase()}" placeholder="nume@exemplu.ro"></div>
-    <div>${fieldLabel('Parolă')}<input type="password" id="signup-pass" required minlength="6" class="${inputBase()}" placeholder="Minim 6 caractere"></div>
-    <div>${fieldLabel('Confirmă parola')}<input type="password" id="signup-pass2" required minlength="6" class="${inputBase()}"></div>
+    <div>${fieldLabel("Email")}<input type="email" id="signup-email" required class="${inputBase()}" placeholder="nume@exemplu.ro"></div>
+    <div>${fieldLabel("Parolă")}<input type="password" id="signup-pass" required minlength="6" class="${inputBase()}" placeholder="Minim 6 caractere"></div>
+    <div>${fieldLabel("Confirmă parola")}<input type="password" id="signup-pass2" required minlength="6" class="${inputBase()}"></div>
     <button type="submit" class="w-full btn-primary rounded-lg py-2.5 text-sm">Creează cont</button>
     <p id="signup-msg" class="text-sm text-center"></p>
     <p class="text-xs text-slate-500 text-center">Contul nou nu are niciun rol alocat. Un administrator va activa contul și îi va atribui rolul.</p>
   </form>`;
-}
-function bindSignupForm(){
-  document.getElementById('form-signup').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const btn = e.target.querySelector('button');
-    const msg = document.getElementById('signup-msg');
-    const email = document.getElementById('signup-email').value.trim();
-    const pass = document.getElementById('signup-pass').value;
-    const pass2 = document.getElementById('signup-pass2').value;
-    if (pass !== pass2){
-      msg.className = 'text-sm text-center text-red-600';
-      msg.textContent = 'Parolele nu coincid.';
-      return;
-    }
-    btn.disabled = true;
-    const { error } = await supa.auth.signUp({
-      email, password: pass,
-      options: { emailRedirectTo: window.location.origin + window.location.pathname }
-    });
-    btn.disabled = false;
-    if (error){
-      msg.className = 'text-sm text-center text-red-600';
-      msg.textContent = error.message;
-    } else {
-      msg.className = 'text-sm text-center text-emerald-600';
-      msg.textContent = 'Cont creat. Verifică emailul pentru confirmare (dacă este activată), apoi autentifică-te.';
-      e.target.reset();
-    }
-  });
-}
+      }
+      function bindSignupForm() {
+        document
+          .getElementById("form-signup")
+          .addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector("button");
+            const msg = document.getElementById("signup-msg");
+            const email = document.getElementById("signup-email").value.trim();
+            const pass = document.getElementById("signup-pass").value;
+            const pass2 = document.getElementById("signup-pass2").value;
+            if (pass !== pass2) {
+              msg.className = "text-sm text-center text-red-600";
+              msg.textContent = "Parolele nu coincid.";
+              return;
+            }
+            btn.disabled = true;
+            const { error } = await supa.auth.signUp({
+              email,
+              password: pass,
+              options: {
+                emailRedirectTo:
+                  window.location.origin + window.location.pathname,
+              },
+            });
+            btn.disabled = false;
+            if (error) {
+              msg.className = "text-sm text-center text-red-600";
+              msg.textContent = error.message;
+            } else {
+              msg.className = "text-sm text-center text-emerald-600";
+              msg.textContent =
+                "Cont creat. Verifică emailul pentru confirmare (dacă este activată), apoi autentifică-te.";
+              e.target.reset();
+            }
+          });
+      }
 
-function forgotForm(){
-  return `
+      function forgotForm() {
+        return `
   <form id="form-forgot" class="space-y-4">
     <p class="text-sm text-slate-500">Introdu adresa de email folosită la înregistrare. Vei primi un link de resetare a parolei.</p>
-    <div>${fieldLabel('Email')}<input type="email" id="forgot-email" required class="${inputBase()}" placeholder="nume@exemplu.ro"></div>
+    <div>${fieldLabel("Email")}<input type="email" id="forgot-email" required class="${inputBase()}" placeholder="nume@exemplu.ro"></div>
     <button type="submit" class="w-full btn-primary rounded-lg py-2.5 text-sm">Trimite link de resetare</button>
     <p id="forgot-msg" class="text-sm text-center"></p>
   </form>`;
-}
-function bindForgotForm(){
-  document.getElementById('form-forgot').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const btn = e.target.querySelector('button');
-    const msg = document.getElementById('forgot-msg');
-    const email = document.getElementById('forgot-email').value.trim();
-    btn.disabled = true;
-    const { error } = await supa.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + window.location.pathname
-    });
-    btn.disabled = false;
-    if (error){
-      msg.className = 'text-sm text-center text-red-600';
-      msg.textContent = error.message;
-    } else {
-      msg.className = 'text-sm text-center text-emerald-600';
-      msg.textContent = 'Dacă adresa există, un email cu linkul de resetare a fost trimis.';
-    }
-  });
-}
+      }
+      function bindForgotForm() {
+        document
+          .getElementById("form-forgot")
+          .addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector("button");
+            const msg = document.getElementById("forgot-msg");
+            const email = document.getElementById("forgot-email").value.trim();
+            btn.disabled = true;
+            const { error } = await supa.auth.resetPasswordForEmail(email, {
+              redirectTo: window.location.origin + window.location.pathname,
+            });
+            btn.disabled = false;
+            if (error) {
+              msg.className = "text-sm text-center text-red-600";
+              msg.textContent = error.message;
+            } else {
+              msg.className = "text-sm text-center text-emerald-600";
+              msg.textContent =
+                "Dacă adresa există, un email cu linkul de resetare a fost trimis.";
+            }
+          });
+      }
 
-// ==================================================================
-// ECRAN MODIFICARE PAROLĂ (după click pe linkul din email)
-// ==================================================================
-function renderResetPassword(){
-  app.innerHTML = `
+      // ==================================================================
+      // ECRAN MODIFICARE PAROLĂ (după click pe linkul din email)
+      // ==================================================================
+      function renderResetPassword() {
+        app.innerHTML = `
   <div class="min-h-screen flex items-center justify-center px-4" style="background:radial-gradient(circle at 20% 20%, #1B2430 0%, #0E1318 65%);">
     <div class="w-full max-w-md">
       <div class="bg-white rounded-2xl shadow-xl p-6 fade-in">
         <h2 class="text-lg font-bold mb-1">Modificare parolă</h2>
         <p class="text-sm text-slate-500 mb-5">Alege o parolă nouă pentru contul tău.</p>
         <form id="form-reset" class="space-y-4">
-          <div>${fieldLabel('Parolă nouă')}<input type="password" id="reset-pass" required minlength="6" class="${inputBase()}"></div>
-          <div>${fieldLabel('Confirmă parola nouă')}<input type="password" id="reset-pass2" required minlength="6" class="${inputBase()}"></div>
+          <div>${fieldLabel("Parolă nouă")}<input type="password" id="reset-pass" required minlength="6" class="${inputBase()}"></div>
+          <div>${fieldLabel("Confirmă parola nouă")}<input type="password" id="reset-pass2" required minlength="6" class="${inputBase()}"></div>
           <button type="submit" class="w-full btn-primary rounded-lg py-2.5 text-sm">Salvează parola nouă</button>
           <p id="reset-msg" class="text-sm text-center"></p>
         </form>
@@ -334,49 +456,55 @@ function renderResetPassword(){
     </div>
   </div>`;
 
-  document.getElementById('form-reset').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const msg = document.getElementById('reset-msg');
-    const p1 = document.getElementById('reset-pass').value;
-    const p2 = document.getElementById('reset-pass2').value;
-    if (p1 !== p2){
-      msg.className = 'text-sm text-center text-red-600';
-      msg.textContent = 'Parolele nu coincid.';
-      return;
-    }
-    const { error } = await supa.auth.updateUser({ password: p1 });
-    if (error){
-      msg.className = 'text-sm text-center text-red-600';
-      msg.textContent = error.message;
-    } else {
-      msg.className = 'text-sm text-center text-emerald-600';
-      msg.textContent = 'Parola a fost schimbată. Redirecționare...';
-      recoveryMode = false;
-      setTimeout(async ()=>{
-        const { data: { session } } = await supa.auth.getSession();
-        if (session){ currentUser = session.user; await loadProfileAndRender(); }
-        else renderAuthScreen();
-      }, 1200);
-    }
-  });
-}
+        document
+          .getElementById("form-reset")
+          .addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const msg = document.getElementById("reset-msg");
+            const p1 = document.getElementById("reset-pass").value;
+            const p2 = document.getElementById("reset-pass2").value;
+            if (p1 !== p2) {
+              msg.className = "text-sm text-center text-red-600";
+              msg.textContent = "Parolele nu coincid.";
+              return;
+            }
+            const { error } = await supa.auth.updateUser({ password: p1 });
+            if (error) {
+              msg.className = "text-sm text-center text-red-600";
+              msg.textContent = error.message;
+            } else {
+              msg.className = "text-sm text-center text-emerald-600";
+              msg.textContent = "Parola a fost schimbată. Redirecționare...";
+              recoveryMode = false;
+              setTimeout(async () => {
+                const {
+                  data: { session },
+                } = await supa.auth.getSession();
+                if (session) {
+                  currentUser = session.user;
+                  await loadProfileAndRender();
+                } else renderAuthScreen();
+              }, 1200);
+            }
+          });
+      }
 
-// ==================================================================
-// SHELL APLICAȚIE (după autentificare)
-// ==================================================================
-function renderShell(){
-  if (!currentProfile){
-    renderPendingRole();
-    return;
-  }
-  if (!currentProfile.role){
-    renderPendingRole();
-    return;
-  }
+      // ==================================================================
+      // SHELL APLICAȚIE (după autentificare)
+      // ==================================================================
+      function renderShell() {
+        if (!currentProfile) {
+          renderPendingRole();
+          return;
+        }
+        if (!currentProfile.role) {
+          renderPendingRole();
+          return;
+        }
 
-  const tabs = tabsForRole(currentProfile.role);
+        const tabs = tabsForRole(currentProfile.role);
 
-  app.innerHTML = `
+        app.innerHTML = `
   <div class="min-h-screen md:flex">
     <div id="sidebar-overlay" class="fixed inset-0 bg-black/40 z-20 hidden"></div>
     <aside id="app-sidebar" class="w-64 md:w-60 shrink-0 text-white flex flex-col fixed md:static inset-y-0 left-0 z-30 -translate-x-full md:translate-x-0 transition-transform duration-200 ease-out" style="background:var(--graphite)">
@@ -392,9 +520,14 @@ function renderShell(){
         <div class="text-xs text-slate-400 mb-0.5">${esc(currentProfile.email)}</div>
         <div class="mb-3 flex items-center gap-1.5 flex-wrap">
           ${rolePill(currentProfile.role)}
-          ${currentProfile.role === 'magazin'
-            ? (currentProfile.nume ? `<span class="text-xs text-slate-300">${esc(currentProfile.nume)}${currentProfile.filiala ? ' - ' + esc(currentProfile.filiala) : ''}</span>` : '')
-            : (currentProfile.nume ? `<span class="text-xs text-slate-300">${esc(currentProfile.nume)}</span>` : '')
+          ${
+            currentProfile.role === "magazin"
+              ? currentProfile.nume
+                ? `<span class="text-xs text-slate-300">${esc(currentProfile.nume)}${currentProfile.filiala ? " - " + esc(currentProfile.filiala) : ""}</span>`
+                : ""
+              : currentProfile.nume
+                ? `<span class="text-xs text-slate-300">${esc(currentProfile.nume)}</span>`
+                : ""
           }
         </div>
         <div class="flex items-center gap-2 flex-wrap">
@@ -413,96 +546,125 @@ function renderShell(){
     </main>
   </div>`;
 
-  function openSidebar(){
-    document.getElementById('app-sidebar').classList.remove('-translate-x-full');
-    document.getElementById('sidebar-overlay').classList.remove('hidden');
-  }
-  function closeSidebar(){
-    document.getElementById('app-sidebar').classList.add('-translate-x-full');
-    document.getElementById('sidebar-overlay').classList.add('hidden');
-  }
-  document.getElementById('btn-open-sidebar').addEventListener('click', openSidebar);
-  document.getElementById('btn-close-sidebar').addEventListener('click', closeSidebar);
-  document.getElementById('sidebar-overlay').addEventListener('click', closeSidebar);
+        function openSidebar() {
+          document
+            .getElementById("app-sidebar")
+            .classList.remove("-translate-x-full");
+          document.getElementById("sidebar-overlay").classList.remove("hidden");
+        }
+        function closeSidebar() {
+          document
+            .getElementById("app-sidebar")
+            .classList.add("-translate-x-full");
+          document.getElementById("sidebar-overlay").classList.add("hidden");
+        }
+        document
+          .getElementById("btn-open-sidebar")
+          .addEventListener("click", openSidebar);
+        document
+          .getElementById("btn-close-sidebar")
+          .addEventListener("click", closeSidebar);
+        document
+          .getElementById("sidebar-overlay")
+          .addEventListener("click", closeSidebar);
 
-  const nav = document.getElementById('side-nav');
-  nav.innerHTML = tabs.map((t,i)=>`
-    <button data-key="${t.key}" class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium ${i===0 ? 'bg-white/10 text-white':'text-slate-300 hover:bg-white/5'}">${t.label}</button>
-  `).join('');
-  nav.querySelectorAll('.nav-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      nav.querySelectorAll('.nav-btn').forEach(b=> b.className = 'nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/5');
-      btn.className = 'nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium bg-white/10 text-white';
-      openTab(btn.dataset.key, tabs);
-      closeSidebar();
-    });
-  });
-  document.getElementById('btn-logout').addEventListener('click', async ()=>{
-    await supa.auth.signOut();
-  });
-  document.getElementById('btn-change-pass').addEventListener('click', ()=>{
-    renderChangePasswordModal();
-  });
+        const nav = document.getElementById("side-nav");
+        nav.innerHTML = tabs
+          .map(
+            (t, i) => `
+    <button data-key="${t.key}" class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium ${i === 0 ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/5"}">${t.label}</button>
+  `,
+          )
+          .join("");
+        nav.querySelectorAll(".nav-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            nav
+              .querySelectorAll(".nav-btn")
+              .forEach(
+                (b) =>
+                  (b.className =
+                    "nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-white/5"),
+              );
+            btn.className =
+              "nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium bg-white/10 text-white";
+            openTab(btn.dataset.key, tabs);
+            closeSidebar();
+          });
+        });
+        document
+          .getElementById("btn-logout")
+          .addEventListener("click", async () => {
+            await supa.auth.signOut();
+          });
+        document
+          .getElementById("btn-change-pass")
+          .addEventListener("click", () => {
+            renderChangePasswordModal();
+          });
 
-  openTab(tabs[0].key, tabs);
-}
+        openTab(tabs[0].key, tabs);
+      }
 
-function tabsForRole(role){
-  const common = [];
-  if (role === 'magazin') return [
-    { key:'stoc', label:'Stocul meu' },
-    { key:'comenzi', label:'Comenzile mele' },
-    { key:'statistici', label:'Statistici' },
-  ];
-  if (role === 'agent') return [
-    { key:'comenzi', label:'Comenzile mele' },
-    { key:'statistici', label:'Statistici' },
-  ];
-  if (role === 'admin') return [
-    { key:'depozit', label:'Depozit central' },
-    { key:'comenzi', label:'Comenzi' },
-    { key:'preturi', label:'Prețuri & promoții' },
-    { key:'utilizatori', label:'Administrare utilizatori' },
-  ];
-  if (role === 'superadmin') return [
-    { key:'depozit', label:'Depozit central' },
-    { key:'comenzi', label:'Comenzi' },
-    { key:'preturi', label:'Prețuri & promoții' },
-    { key:'aprobari', label:'Aprobări' },
-    { key:'utilizatori', label:'Administrare utilizatori' },
-  ];
-  return common;
-}
+      function tabsForRole(role) {
+        const common = [];
+        if (role === "magazin")
+          return [
+            { key: "stoc", label: "Stocul meu" },
+            { key: "comenzi", label: "Comenzile mele" },
+            { key: "statistici", label: "Statistici" },
+          ];
+        if (role === "agent")
+          return [
+            { key: "comenzi", label: "Comenzile mele" },
+            { key: "statistici", label: "Statistici" },
+          ];
+        if (role === "admin")
+          return [
+            { key: "depozit", label: "Depozit central" },
+            { key: "comenzi", label: "Comenzi" },
+            { key: "preturi", label: "Prețuri & promoții" },
+          ];
+        if (role === "superadmin")
+          return [
+            { key: "depozit", label: "Depozit central" },
+            { key: "comenzi", label: "Comenzi" },
+            { key: "preturi", label: "Prețuri & promoții" },
+            { key: "aprobari", label: "Aprobări" },
+            { key: "utilizatori", label: "Administrare utilizatori" },
+          ];
+        return common;
+      }
 
-function openTab(key, tabs){
-  const t = tabs.find(x=>x.key===key);
-  document.getElementById('page-title').textContent = t ? t.label : '';
-  const content = document.getElementById('page-content');
-  if (key === 'utilizatori'){
-    renderUserAdmin(content);
-  } else {
-    content.innerHTML = `
+      function openTab(key, tabs) {
+        const t = tabs.find((x) => x.key === key);
+        document.getElementById("page-title").textContent = t ? t.label : "";
+        const content = document.getElementById("page-content");
+        if (key === "utilizatori") {
+          renderUserAdmin(content);
+        } else {
+          content.innerHTML = `
       <div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)">
         <p class="text-slate-400 text-sm">Această secțiune va fi adăugată ulterior.</p>
       </div>`;
-  }
-}
+        }
+      }
 
-// ==================================================================
-// MODAL SCHIMBARE PAROLĂ (utilizator autentificat, fără parola veche)
-// ==================================================================
-function renderChangePasswordModal(){
-  const overlay = document.createElement('div');
-  overlay.id = 'change-pass-overlay';
-  overlay.className = 'fixed inset-0 z-40 flex items-center justify-center px-4';
-  overlay.style.background = 'rgba(15,20,25,0.55)';
-  overlay.innerHTML = `
+      // ==================================================================
+      // MODAL SCHIMBARE PAROLĂ (utilizator autentificat, fără parola veche)
+      // ==================================================================
+      function renderChangePasswordModal() {
+        const overlay = document.createElement("div");
+        overlay.id = "change-pass-overlay";
+        overlay.className =
+          "fixed inset-0 z-40 flex items-center justify-center px-4";
+        overlay.style.background = "rgba(15,20,25,0.55)";
+        overlay.innerHTML = `
     <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm fade-in">
       <h2 class="text-lg font-bold mb-1">Schimbă parola</h2>
       <p class="text-sm text-slate-500 mb-5">Alege o parolă nouă pentru contul tău.</p>
       <form id="form-change-pass" class="space-y-4">
-        <div>${fieldLabel('Parolă nouă')}<input type="password" id="change-pass-1" required minlength="6" class="${inputBase()}"></div>
-        <div>${fieldLabel('Confirmă parola nouă')}<input type="password" id="change-pass-2" required minlength="6" class="${inputBase()}"></div>
+        <div>${fieldLabel("Parolă nouă")}<input type="password" id="change-pass-1" required minlength="6" class="${inputBase()}"></div>
+        <div>${fieldLabel("Confirmă parola nouă")}<input type="password" id="change-pass-2" required minlength="6" class="${inputBase()}"></div>
         <div class="flex gap-2 pt-1">
           <button type="button" id="change-pass-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
           <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Salvează</button>
@@ -510,51 +672,60 @@ function renderChangePasswordModal(){
         <p id="change-pass-msg" class="text-sm text-center"></p>
       </form>
     </div>`;
-  document.body.appendChild(overlay);
+        document.body.appendChild(overlay);
 
-  document.getElementById('change-pass-cancel').addEventListener('click', ()=> overlay.remove());
-  overlay.addEventListener('click', (e)=>{ if (e.target === overlay) overlay.remove(); });
+        document
+          .getElementById("change-pass-cancel")
+          .addEventListener("click", () => overlay.remove());
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
 
-  document.getElementById('form-change-pass').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const msg = document.getElementById('change-pass-msg');
-    const p1 = document.getElementById('change-pass-1').value;
-    const p2 = document.getElementById('change-pass-2').value;
-    if (p1 !== p2){
-      msg.className = 'text-sm text-center text-red-600';
-      msg.textContent = 'Parolele nu coincid.';
-      return;
-    }
-    const btn = e.target.querySelector('button[type="submit"]');
-    btn.disabled = true; btn.textContent = 'Se salvează...';
-    const { error } = await supa.auth.updateUser({ password: p1 });
-    if (error){
-      msg.className = 'text-sm text-center text-red-600';
-      msg.textContent = error.message;
-      btn.disabled = false; btn.textContent = 'Salvează';
-      return;
-    }
-    overlay.remove();
-    toast('Parola a fost schimbată cu succes.');
-  });
-}
+        document
+          .getElementById("form-change-pass")
+          .addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const msg = document.getElementById("change-pass-msg");
+            const p1 = document.getElementById("change-pass-1").value;
+            const p2 = document.getElementById("change-pass-2").value;
+            if (p1 !== p2) {
+              msg.className = "text-sm text-center text-red-600";
+              msg.textContent = "Parolele nu coincid.";
+              return;
+            }
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.textContent = "Se salvează...";
+            const { error } = await supa.auth.updateUser({ password: p1 });
+            if (error) {
+              msg.className = "text-sm text-center text-red-600";
+              msg.textContent = error.message;
+              btn.disabled = false;
+              btn.textContent = "Salvează";
+              return;
+            }
+            overlay.remove();
+            toast("Parola a fost schimbată cu succes.");
+          });
+      }
 
-// ==================================================================
-// MODAL ADRESĂ DE FACTURARE (pentru conturi de tip magazin)
-// ==================================================================
-function renderBillingAddressModal(p, billingBtn){
-  const overlay = document.createElement('div');
-  overlay.id = 'billing-address-overlay';
-  overlay.className = 'fixed inset-0 z-40 flex items-center justify-center px-4';
-  overlay.style.background = 'rgba(15,20,25,0.55)';
-  overlay.innerHTML = `
+      // ==================================================================
+      // MODAL ADRESĂ DE FACTURARE (pentru conturi de tip magazin)
+      // ==================================================================
+      function renderBillingAddressModal(p, billingBtn) {
+        const overlay = document.createElement("div");
+        overlay.id = "billing-address-overlay";
+        overlay.className =
+          "fixed inset-0 z-40 flex items-center justify-center px-4";
+        overlay.style.background = "rgba(15,20,25,0.55)";
+        overlay.innerHTML = `
     <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm fade-in">
       <h2 class="text-lg font-bold mb-1">Adresă de facturare</h2>
-      <p class="text-sm text-slate-500 mb-5">Pentru magazinul ${esc(p.nume || p.email)}${p.filiala ? ' - ' + esc(p.filiala) : ''}. Va fi folosită ulterior la comenzi.</p>
+      <p class="text-sm text-slate-500 mb-5">Pentru magazinul ${esc(p.nume || p.email)}${p.filiala ? " - " + esc(p.filiala) : ""}. Va fi folosită ulterior la comenzi.</p>
       <form id="form-billing-address" class="space-y-4">
         <div>
-          ${fieldLabel('Adresă de facturare')}
-          <textarea id="billing-address-input" rows="4" class="${inputBase()}" placeholder="Ex: Str. Exemplu nr. 1, Carei, jud. Satu Mare">${esc(p.adresa_facturare || '')}</textarea>
+          ${fieldLabel("Adresă de facturare")}
+          <textarea id="billing-address-input" rows="4" class="${inputBase()}" placeholder="Ex: Str. Exemplu nr. 1, Carei, jud. Satu Mare">${esc(p.adresa_facturare || "")}</textarea>
         </div>
         <div class="flex gap-2 pt-1">
           <button type="button" id="billing-address-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
@@ -563,43 +734,59 @@ function renderBillingAddressModal(p, billingBtn){
         <p id="billing-address-msg" class="text-sm text-center"></p>
       </form>
     </div>`;
-  document.body.appendChild(overlay);
+        document.body.appendChild(overlay);
 
-  document.getElementById('billing-address-cancel').addEventListener('click', ()=> overlay.remove());
-  overlay.addEventListener('click', (e)=>{ if (e.target === overlay) overlay.remove(); });
+        document
+          .getElementById("billing-address-cancel")
+          .addEventListener("click", () => overlay.remove());
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
 
-  document.getElementById('form-billing-address').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const msg = document.getElementById('billing-address-msg');
-    const value = document.getElementById('billing-address-input').value.trim() || null;
+        document
+          .getElementById("form-billing-address")
+          .addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const msg = document.getElementById("billing-address-msg");
+            const value =
+              document.getElementById("billing-address-input").value.trim() ||
+              null;
 
-    const btn = e.target.querySelector('button[type="submit"]');
-    btn.disabled = true; btn.textContent = 'Se salvează...';
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.textContent = "Se salvează...";
 
-    const { error } = await supa.from('profiles').update({
-      adresa_facturare: value, updated_at: new Date().toISOString()
-    }).eq('id', p.id);
+            const { error } = await supa
+              .from("profiles")
+              .update({
+                adresa_facturare: value,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", p.id);
 
-    if (error){
-      msg.className = 'text-sm text-center text-red-600';
-      msg.textContent = error.message;
-      btn.disabled = false; btn.textContent = 'Salvează';
-      return;
-    }
+            if (error) {
+              msg.className = "text-sm text-center text-red-600";
+              msg.textContent = error.message;
+              btn.disabled = false;
+              btn.textContent = "Salvează";
+              return;
+            }
 
-    p.adresa_facturare = value;
-    if (billingBtn){
-      billingBtn.innerHTML = value ? '✓ Adresă<br>facturare' : '+ Adaugă<br>adresă';
-      billingBtn.className = `billing-btn whitespace-nowrap w-20 h-[34px] flex flex-col items-center justify-center rounded-md text-center text-[10px] leading-[1.1] font-semibold ${value ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`;
-    }
+            p.adresa_facturare = value;
+            if (billingBtn) {
+              billingBtn.innerHTML = value
+                ? "✓ Adresă<br>facturare"
+                : "+ Adaugă<br>adresă";
+              billingBtn.className = `billing-btn whitespace-nowrap w-20 h-[34px] flex flex-col items-center justify-center rounded-md text-center text-[10px] leading-[1.1] font-semibold ${value ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`;
+            }
 
-    overlay.remove();
-    toast('Adresa de facturare a fost salvată.');
-  });
-}
+            overlay.remove();
+            toast("Adresa de facturare a fost salvată.");
+          });
+      }
 
-function renderPendingRole(){
-  app.innerHTML = `
+      function renderPendingRole() {
+        app.innerHTML = `
   <div class="min-h-screen flex items-center justify-center px-4" style="background:var(--bg)">
     <div class="max-w-md text-center bg-white rounded-2xl shadow p-8 fade-in">
       <div class="w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-4" style="background:#FFF1DE">
@@ -610,25 +797,35 @@ function renderPendingRole(){
       <button id="btn-logout-pending" class="text-sm text-slate-500 underline">Deconectare</button>
     </div>
   </div>`;
-  document.getElementById('btn-logout-pending').addEventListener('click', async ()=>{
-    await supa.auth.signOut();
-  });
-}
+        document
+          .getElementById("btn-logout-pending")
+          .addEventListener("click", async () => {
+            await supa.auth.signOut();
+          });
+      }
 
-// ==================================================================
-// ADMINISTRARE UTILIZATORI (admin / superadmin)
-// ==================================================================
-async function renderUserAdmin(container){
-  container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+      // ==================================================================
+      // ADMINISTRARE UTILIZATORI (admin / superadmin)
+      // ==================================================================
+      async function renderUserAdmin(container) {
+        container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
 
-  const { data: profiles, error } = await supa.from('profiles').select('*').order('created_at', { ascending: false });
-  if (error){ container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(error.message)}</div>`; return; }
+        const { data: profiles, error } = await supa
+          .from("profiles")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (error) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(error.message)}</div>`;
+          return;
+        }
 
-  const { data: assignments } = await supa.from('agent_magazine').select('*');
-  const magazine = profiles.filter(p => p.role === 'magazin');
-  const viewerIsSuperadmin = currentProfile.role === 'superadmin';
+        const { data: assignments } = await supa
+          .from("agent_magazine")
+          .select("*");
+        const magazine = profiles.filter((p) => p.role === "magazin");
+        const viewerIsSuperadmin = currentProfile.role === "superadmin";
 
-  container.innerHTML = `
+        container.innerHTML = `
     <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
       <table class="w-full text-sm min-w-[980px]">
         <thead>
@@ -647,173 +844,251 @@ async function renderUserAdmin(container){
       </table>
     </div>`;
 
-  const tbody = document.getElementById('user-rows');
-  tbody.innerHTML = profiles.map(p => userRow(p, magazine, assignments || [], viewerIsSuperadmin)).join('');
+        const tbody = document.getElementById("user-rows");
+        tbody.innerHTML = profiles
+          .map((p) =>
+            userRow(
+              p,
+              magazine,
+              assignments || [],
+              viewerIsSuperadmin,
+              profiles,
+            ),
+          )
+          .join("");
 
-  profiles.forEach(p => bindUserRow(p, magazine, viewerIsSuperadmin));
-}
+        profiles.forEach((p) => bindUserRow(p, magazine, viewerIsSuperadmin));
+      }
 
-function userRow(p, magazine, assignments, viewerIsSuperadmin){
-  const isAgent = p.role === 'agent';
-  const isMagazin = p.role === 'magazin';
-  const assignedIds = assignments.filter(a => a.agent_id === p.id).map(a => a.magazin_id);
-  // Un admin (nu super admin) nu poate modifica rolul sau șterge contul unui super admin.
-  const lockedForViewer = p.role === 'superadmin' && !viewerIsSuperadmin;
-  const isSelf = p.id === currentUser.id;
+      function userRow(
+        p,
+        magazine,
+        assignments,
+        viewerIsSuperadmin,
+        allProfiles,
+      ) {
+        const isAgent = p.role === "agent";
+        const isMagazin = p.role === "magazin";
+        const assignedIds = assignments
+          .filter((a) => a.agent_id === p.id)
+          .map((a) => a.magazin_id);
+        // Un admin (nu super admin) nu poate modifica rolul sau șterge contul unui super admin.
+        const lockedForViewer = p.role === "superadmin" && !viewerIsSuperadmin;
+        const isSelf = p.id === currentUser.id;
 
-  return `
+        return `
   <tr class="border-b last:border-0 align-top" style="border-color:var(--line)" data-row="${p.id}">
     <td class="px-4 py-3">
       <div class="font-medium text-slate-800">${esc(p.email)}</div>
-      <div class="text-xs text-slate-400">${new Date(p.created_at).toLocaleDateString('ro-RO')}</div>
+      <div class="text-xs text-slate-400">${new Date(p.created_at).toLocaleDateString("ro-RO")}</div>
     </td>
     <td class="px-4 py-3">
-      <select data-field="role" data-id="${p.id}" class="role-select border rounded-md px-2 py-1.5 text-sm" ${lockedForViewer ? 'disabled title="Doar un super admin poate modifica rolul unui super admin"':''}>
-        <option value="" ${!p.role ? 'selected':''}>Fără rol</option>
-        <option value="magazin" ${p.role==='magazin'?'selected':''}>Magazin</option>
-        <option value="agent" ${p.role==='agent'?'selected':''}>Agent</option>
-        <option value="admin" ${p.role==='admin'?'selected':''}>Admin</option>
-        <option value="superadmin" ${p.role==='superadmin'?'selected':''} ${!viewerIsSuperadmin ? 'disabled':''}>Super Admin</option>
+      <select data-field="role" data-id="${p.id}" class="role-select border rounded-md px-2 py-1.5 text-sm" ${lockedForViewer ? 'disabled title="Doar un super admin poate modifica rolul unui super admin"' : ""}>
+        <option value="" ${!p.role ? "selected" : ""}>Fără rol</option>
+        <option value="magazin" ${p.role === "magazin" ? "selected" : ""}>Magazin</option>
+        <option value="agent" ${p.role === "agent" ? "selected" : ""}>Agent</option>
+        <option value="admin" ${p.role === "admin" ? "selected" : ""}>Admin</option>
+        <option value="superadmin" ${p.role === "superadmin" ? "selected" : ""} ${!viewerIsSuperadmin ? "disabled" : ""}>Super Admin</option>
       </select>
     </td>
     <td class="px-4 py-3">
-      <input data-field="nume" data-id="${p.id}" type="text" value="${esc(p.nume||'')}"
-        placeholder="${isAgent ? 'Nume agent' : isMagazin ? 'Ex: SatAn' : (p.role==='admin'||p.role==='superadmin') ? 'Nume (opțional)' : '—'}"
-        class="nume-input border rounded-md px-2 py-1.5 text-sm w-32" ${!p.role ? 'disabled':''}>
+      <input data-field="nume" data-id="${p.id}" type="text" value="${esc(p.nume || "")}"
+        placeholder="${isAgent ? "Nume agent" : isMagazin ? "Ex: SatAn" : p.role === "admin" || p.role === "superadmin" ? "Nume (opțional)" : "—"}"
+        class="nume-input border rounded-md px-2 py-1.5 text-sm w-32" ${!p.role ? "disabled" : ""}>
     </td>
     <td class="px-4 py-3">
-      <input data-field="telefon" data-id="${p.id}" type="tel" value="${esc(p.telefon||'')}"
+      <input data-field="telefon" data-id="${p.id}" type="tel" value="${esc(p.telefon || "")}"
         placeholder="Opțional"
-        class="telefon-input border rounded-md px-2 py-1.5 text-sm w-28" ${!p.role ? 'disabled':''}>
+        class="telefon-input border rounded-md px-2 py-1.5 text-sm w-28" ${!p.role ? "disabled" : ""}>
     </td>
     <td class="px-4 py-3">
-      <input data-field="filiala" data-id="${p.id}" type="text" value="${esc(p.filiala||'')}"
+      <input data-field="filiala" data-id="${p.id}" type="text" value="${esc(p.filiala || "")}"
         placeholder="Ex: Carei"
-        class="filiala-input border rounded-md px-2 py-1.5 text-sm w-28" ${!isMagazin ? 'disabled':''}>
+        class="filiala-input border rounded-md px-2 py-1.5 text-sm w-28" ${!isMagazin ? "disabled" : ""}>
     </td>
     <td class="px-4 py-3">
-      ${isMagazin ? `
-        <button data-billing="${p.id}" class="billing-btn whitespace-nowrap w-20 h-[34px] flex flex-col items-center justify-center rounded-md text-center text-[10px] leading-[1.1] font-semibold ${p.adresa_facturare ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
-          ${p.adresa_facturare ? '✓ Adresă<br>facturare' : '+ Adaugă<br>adresă'}
+      ${
+        isMagazin
+          ? `
+        <button data-billing="${p.id}" class="billing-btn whitespace-nowrap w-20 h-[34px] flex flex-col items-center justify-center rounded-md text-center text-[10px] leading-[1.1] font-semibold ${p.adresa_facturare ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}">
+          ${p.adresa_facturare ? "✓ Adresă<br>facturare" : "+ Adaugă<br>adresă"}
         </button>
-      ` : '<span class="text-slate-300 text-xs">—</span>'}
+      `
+          : '<span class="text-slate-300 text-xs">—</span>'
+      }
     </td>
     <td class="px-4 py-3">
-      <div class="magazine-box ${isAgent ? '' : 'opacity-30 pointer-events-none'} max-h-24 overflow-y-auto space-y-1 w-44">
-        ${magazine.length === 0 ? '<span class="text-xs text-slate-400">Niciun magazin disponibil</span>' : magazine.map(m => `
-          <label class="flex items-center gap-1.5 text-xs">
-            <input type="checkbox" class="mag-check" data-magazin-id="${m.id}" ${assignedIds.includes(m.id) ? 'checked':''}>
-            <span>${esc(m.nume||m.email)}${m.filiala ? ' - ' + esc(m.filiala) : ''}</span>
-          </label>
-        `).join('')}
+      <div class="magazine-box ${isAgent ? "" : "opacity-30 pointer-events-none"} max-h-24 overflow-y-auto space-y-1 w-44">
+        ${
+          magazine.length === 0
+            ? '<span class="text-xs text-slate-400">Niciun magazin disponibil</span>'
+            : magazine
+                .map((m) => {
+                  const assignedToThis = assignedIds.includes(m.id);
+                  const otherAssignment = assignments.find(
+                    (a) => a.magazin_id === m.id && a.agent_id !== p.id,
+                  );
+                  const lockedByOther = !!otherAssignment && !assignedToThis;
+                  const otherAgent = lockedByOther
+                    ? (allProfiles || []).find(
+                        (ap) => ap.id === otherAssignment.agent_id,
+                      )
+                    : null;
+                  const otherLabel = otherAgent
+                    ? otherAgent.nume || otherAgent.email
+                    : "alt agent";
+                  return `
+          <label class="flex items-center gap-1.5 text-xs ${lockedByOther ? "opacity-40 cursor-not-allowed" : ""}" ${lockedByOther ? `title="Deja alocat lui ${esc(otherLabel)}"` : ""}>
+            <input type="checkbox" class="mag-check" data-magazin-id="${m.id}" ${assignedToThis ? "checked" : ""} ${lockedByOther ? "disabled" : ""}>
+            <span>${esc(m.nume || m.email)}${m.filiala ? " - " + esc(m.filiala) : ""}${lockedByOther ? ` <em class="not-italic text-slate-400">(${esc(otherLabel)})</em>` : ""}</span>
+          </label>`;
+                })
+                .join("")
+        }
       </div>
     </td>
     <td class="px-4 py-3 whitespace-nowrap">
-      <button data-save="${p.id}" class="save-btn btn-primary rounded-md px-3 py-1.5 text-xs" ${lockedForViewer ? 'disabled':''}>Salvează</button>
-      <button data-delete="${p.id}" class="delete-btn rounded-md px-3 py-1.5 text-xs font-semibold ml-1 ${(lockedForViewer || isSelf) ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-red-50 text-red-600 hover:bg-red-100'}"
-        ${(lockedForViewer || isSelf) ? 'disabled' : ''}
-        title="${isSelf ? 'Nu îți poți șterge propriul cont din această interfață' : (lockedForViewer ? 'Doar un super admin poate șterge un cont de super admin' : 'Șterge definitiv acest cont')}">
+      <button data-save="${p.id}" class="save-btn btn-primary rounded-md px-3 py-1.5 text-xs" ${lockedForViewer ? "disabled" : ""}>Salvează</button>
+      <button data-delete="${p.id}" class="delete-btn rounded-md px-3 py-1.5 text-xs font-semibold ml-1 ${lockedForViewer || isSelf ? "bg-slate-100 text-slate-300 cursor-not-allowed" : "bg-red-50 text-red-600 hover:bg-red-100"}"
+        ${lockedForViewer || isSelf ? "disabled" : ""}
+        title="${isSelf ? "Nu îți poți șterge propriul cont din această interfață" : lockedForViewer ? "Doar un super admin poate șterge un cont de super admin" : "Șterge definitiv acest cont"}">
         Șterge cont
       </button>
     </td>
   </tr>`;
-}
-
-function bindUserRow(p, magazine, viewerIsSuperadmin){
-  const row = document.querySelector(`tr[data-row="${p.id}"]`);
-  if (!row) return;
-
-  const roleSelect = row.querySelector('.role-select');
-  const numeInput = row.querySelector('.nume-input');
-  const telefonInput = row.querySelector('.telefon-input');
-  const filialaInput = row.querySelector('.filiala-input');
-  const magBox = row.querySelector('.magazine-box');
-  const deleteBtn = row.querySelector('.delete-btn');
-  const billingBtn = row.querySelector('.billing-btn');
-
-  if (billingBtn){
-    billingBtn.addEventListener('click', ()=>{
-      renderBillingAddressModal(p, billingBtn);
-    });
-  }
-
-  if (deleteBtn && !deleteBtn.disabled){
-    deleteBtn.addEventListener('click', async ()=>{
-      const lockedForViewer = p.role === 'superadmin' && !viewerIsSuperadmin;
-      if (lockedForViewer){
-        toast('Doar un super admin poate șterge un cont de super admin.', true);
-        return;
       }
-      const ok = confirm(`Ștergi definitiv contul ${p.email}? Acțiunea nu poate fi anulată.`);
-      if (!ok) return;
 
-      deleteBtn.disabled = true; deleteBtn.textContent = 'Se șterge...';
-      const { data, error } = await supa.functions.invoke('delete-user', {
-        body: { target_id: p.id }
-      });
-      const errMsg = error?.message || data?.error;
-      if (errMsg){
-        toast('Eroare la ștergere: ' + errMsg, true);
-        deleteBtn.disabled = false; deleteBtn.textContent = 'Șterge cont';
-        return;
+      function bindUserRow(p, magazine, viewerIsSuperadmin) {
+        const row = document.querySelector(`tr[data-row="${p.id}"]`);
+        if (!row) return;
+
+        const roleSelect = row.querySelector(".role-select");
+        const numeInput = row.querySelector(".nume-input");
+        const telefonInput = row.querySelector(".telefon-input");
+        const filialaInput = row.querySelector(".filiala-input");
+        const magBox = row.querySelector(".magazine-box");
+        const deleteBtn = row.querySelector(".delete-btn");
+        const billingBtn = row.querySelector(".billing-btn");
+
+        if (billingBtn) {
+          billingBtn.addEventListener("click", () => {
+            renderBillingAddressModal(p, billingBtn);
+          });
+        }
+
+        if (deleteBtn && !deleteBtn.disabled) {
+          deleteBtn.addEventListener("click", async () => {
+            const lockedForViewer =
+              p.role === "superadmin" && !viewerIsSuperadmin;
+            if (lockedForViewer) {
+              toast(
+                "Doar un super admin poate șterge un cont de super admin.",
+                true,
+              );
+              return;
+            }
+            const ok = confirm(
+              `Ștergi definitiv contul ${p.email}? Acțiunea nu poate fi anulată.`,
+            );
+            if (!ok) return;
+
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = "Se șterge...";
+            const { data, error } = await supa.functions.invoke("delete-user", {
+              body: { target_id: p.id },
+            });
+            const errMsg = error?.message || data?.error;
+            if (errMsg) {
+              toast("Eroare la ștergere: " + errMsg, true);
+              deleteBtn.disabled = false;
+              deleteBtn.textContent = "Șterge cont";
+              return;
+            }
+            toast("Cont șters definitiv.");
+            row.remove();
+          });
+        }
+
+        roleSelect.addEventListener("change", () => {
+          const role = roleSelect.value;
+          numeInput.disabled = !role;
+          telefonInput.disabled = !role;
+          filialaInput.disabled = role !== "magazin";
+          if (role === "agent")
+            magBox.classList.remove("opacity-30", "pointer-events-none");
+          else magBox.classList.add("opacity-30", "pointer-events-none");
+        });
+
+        row.querySelector(".save-btn").addEventListener("click", async () => {
+          const btn = row.querySelector(".save-btn");
+
+          if (p.role === "superadmin" && !viewerIsSuperadmin) {
+            toast(
+              "Doar un super admin poate modifica rolul unui super admin.",
+              true,
+            );
+            return;
+          }
+          if (roleSelect.value === "superadmin" && !viewerIsSuperadmin) {
+            toast(
+              "Doar un super admin poate acorda rolul de super admin.",
+              true,
+            );
+            return;
+          }
+
+          btn.disabled = true;
+          btn.textContent = "Se salvează...";
+
+          const role = roleSelect.value || null;
+          const nume = numeInput.value.trim() || null;
+          const telefon = telefonInput.value.trim() || null;
+          const filiala = filialaInput.value.trim() || null;
+
+          const { error: upErr } = await supa
+            .from("profiles")
+            .update({
+              role,
+              nume,
+              telefon,
+              filiala,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", p.id);
+
+          if (upErr) {
+            toast("Eroare: " + upErr.message, true);
+            btn.disabled = false;
+            btn.textContent = "Salvează";
+            return;
+          }
+
+          if (role === "agent") {
+            const checked = Array.from(
+              row.querySelectorAll(".mag-check:checked"),
+            ).map((c) => c.dataset.magazinId);
+            await supa.from("agent_magazine").delete().eq("agent_id", p.id);
+            if (checked.length) {
+              const rows = checked.map((magId) => ({
+                agent_id: p.id,
+                magazin_id: magId,
+              }));
+              const { error: linkErr } = await supa
+                .from("agent_magazine")
+                .insert(rows);
+              if (linkErr)
+                toast(
+                  "Eroare la alocarea magazinelor: " + linkErr.message,
+                  true,
+                );
+            }
+          }
+
+          toast("Salvat cu succes.");
+          btn.disabled = false;
+          btn.textContent = "Salvează";
+        });
       }
-      toast('Cont șters definitiv.');
-      row.remove();
-    });
-  }
-
-  roleSelect.addEventListener('change', ()=>{
-    const role = roleSelect.value;
-    numeInput.disabled = !role;
-    telefonInput.disabled = !role;
-    filialaInput.disabled = role !== 'magazin';
-    if (role === 'agent') magBox.classList.remove('opacity-30','pointer-events-none');
-    else magBox.classList.add('opacity-30','pointer-events-none');
-  });
-
-  row.querySelector('.save-btn').addEventListener('click', async ()=>{
-    const btn = row.querySelector('.save-btn');
-
-    if (p.role === 'superadmin' && !viewerIsSuperadmin){
-      toast('Doar un super admin poate modifica rolul unui super admin.', true);
-      return;
-    }
-    if (roleSelect.value === 'superadmin' && !viewerIsSuperadmin){
-      toast('Doar un super admin poate acorda rolul de super admin.', true);
-      return;
-    }
-
-    btn.disabled = true; btn.textContent = 'Se salvează...';
-
-    const role = roleSelect.value || null;
-    const nume = numeInput.value.trim() || null;
-    const telefon = telefonInput.value.trim() || null;
-    const filiala = filialaInput.value.trim() || null;
-
-    const { error: upErr } = await supa.from('profiles').update({
-      role, nume, telefon, filiala, updated_at: new Date().toISOString()
-    }).eq('id', p.id);
-
-    if (upErr){
-      toast('Eroare: ' + upErr.message, true);
-      btn.disabled = false; btn.textContent = 'Salvează';
-      return;
-    }
-
-    if (role === 'agent'){
-      const checked = Array.from(row.querySelectorAll('.mag-check:checked')).map(c => c.dataset.magazinId);
-      await supa.from('agent_magazine').delete().eq('agent_id', p.id);
-      if (checked.length){
-        const rows = checked.map(magId => ({ agent_id: p.id, magazin_id: magId }));
-        const { error: linkErr } = await supa.from('agent_magazine').insert(rows);
-        if (linkErr) toast('Eroare la alocarea magazinelor: ' + linkErr.message, true);
-      }
-    }
-
-    toast('Salvat cu succes.');
-    btn.disabled = false; btn.textContent = 'Salvează';
-  });
-}
-</script>
-</body>
+    </script>
+  </body>
 </html>
