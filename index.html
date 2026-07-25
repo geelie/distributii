@@ -99,6 +99,21 @@
           transform: translateY(0);
         }
       }
+
+      /* Linii de grilă (orizontale + verticale) pentru toate tabelele de
+         listare din aplicație — subțiri, dar mult mai vizibile decât
+         --line, spre negru. Regulă globală, aditivă: nu modifică markup-ul
+         niciunui tabel existent. */
+      :root {
+        --line-strong: #1e293b;
+      }
+      table {
+        border-collapse: collapse;
+      }
+      table th,
+      table td {
+        border: 1px solid var(--line-strong);
+      }
     </style>
   </head>
   <body class="min-h-screen">
@@ -610,29 +625,31 @@
         if (role === "magazin")
           return [
             { key: "stoc", label: "Stocul meu" },
+            { key: "vandute", label: "Produse vândute" },
             { key: "comenzi", label: "Comenzile mele" },
             { key: "baterii", label: "Încărcare baterii" },
-            { key: "statistici", label: "Statistici" },
           ];
         if (role === "agent")
           return [
             { key: "comenzi", label: "Comenzile mele" },
+            { key: "stoc-alocat", label: "Stoc magazine alocate" },
             { key: "baterii", label: "Încărcare baterii" },
-            { key: "statistici", label: "Statistici" },
           ];
         if (role === "admin")
           return [
             { key: "depozit", label: "Depozit central" },
+            { key: "trimise", label: "Produse trimise către magazine" },
+            { key: "vandute", label: "Produse vândute" },
             { key: "comenzi", label: "Comenzi" },
             { key: "baterii", label: "Încărcare baterii" },
-            { key: "preturi", label: "Prețuri & promoții" },
           ];
         if (role === "superadmin")
           return [
             { key: "depozit", label: "Depozit central" },
+            { key: "trimise", label: "Produse trimise către magazine" },
+            { key: "vandute", label: "Produse vândute" },
             { key: "comenzi", label: "Comenzi" },
             { key: "baterii", label: "Încărcare baterii" },
-            { key: "preturi", label: "Prețuri & promoții" },
             { key: "aprobari", label: "Aprobări" },
             { key: "utilizatori", label: "Administrare utilizatori" },
           ];
@@ -647,15 +664,21 @@
           renderUserAdmin(content);
         } else if (key === "depozit") {
           renderDepozitCentral(content);
+        } else if (key === "trimise") {
+          renderProduseTrimiseTab(content);
         } else if (key === "stoc" && currentProfile.role === "magazin") {
           renderMagazinStoc(content);
+        } else if (key === "stoc-alocat" && currentProfile.role === "agent") {
+          renderAgentStoc(content);
         } else if (key === "baterii") {
           renderBateriiTab(content);
+        } else if (key === "vandute") {
+          renderVanduteTab(content);
         } else if (key === "aprobari") {
           renderAprobari(content);
         } else if (key === "comenzi") {
           if (currentProfile.role === "agent") {
-            renderAgentComenziTab(content);
+            renderComenziAgent(content);
           } else if (currentProfile.role === "magazin") {
             renderComenziMagazin(content);
           } else {
@@ -1408,9 +1431,11 @@
         );
       }
 
-      async function renderDepozitCentral(container) {
-        container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
-
+      // Încarcă datele comune folosite atât de tab-ul "Depozit central"
+      // (stocul disponibil) cât și de tab-ul independent "Produse trimise
+      // către magazine" — extras dintr-o singură funcție ca să nu se
+      // dubleze interogările către Supabase.
+      async function loadDepozitData() {
         const [
           { data: produse, error: prodErr },
           { data: profiles, error: profErr },
@@ -1429,18 +1454,14 @@
           loadTvaRate(),
         ]);
 
-        if (prodErr) {
-          container.innerHTML = `<div class="text-red-600 text-sm">Eroare la încărcarea stocului: ${esc(prodErr.message)}</div>`;
-          return;
-        }
-        if (profErr) {
-          container.innerHTML = `<div class="text-red-600 text-sm">Eroare la încărcarea profilurilor: ${esc(profErr.message)}</div>`;
-          return;
-        }
-        if (liniiErr) {
-          container.innerHTML = `<div class="text-red-600 text-sm">Eroare la încărcarea comenzilor: ${esc(liniiErr.message)}</div>`;
-          return;
-        }
+        const error =
+          (prodErr && "Eroare la încărcarea stocului: " + prodErr.message) ||
+          (profErr &&
+            "Eroare la încărcarea profilurilor: " + profErr.message) ||
+          (liniiErr &&
+            "Eroare la încărcarea comenzilor: " + liniiErr.message) ||
+          null;
+        if (error) return { error };
 
         const agenti = (profiles || []).filter((p) => p.role === "agent");
         const magazine = (profiles || []).filter((p) => p.role === "magazin");
@@ -1467,7 +1488,7 @@
           (p) => !p.magazin_id && !p.vanzare_directa,
         );
         const produseTrimise = (produse || []).filter(
-          (p) => p.magazin_id || p.vanzare_directa,
+          (p) => (p.magazin_id || p.vanzare_directa) && !p.vandut,
         );
 
         // Produse legate de o linie de comandă "pregătită" (rezervate), dar
@@ -1480,54 +1501,51 @@
 
         const tvaProcentCurent = Math.round(TVA_RATE * 10000) / 100;
 
+        return {
+          error: null,
+          agenti,
+          magazine,
+          agentMagazinMap,
+          marci,
+          comandaCtx,
+          stocDisponibil,
+          produseTrimise,
+          reservedIds,
+          tvaProcentCurent,
+        };
+      }
+
+      // TAB "Depozit central" — doar stocul disponibil al depozitului +
+      // controlul cotei de TVA. "Produse trimise către magazine" este acum
+      // un meniu independent (vezi renderProduseTrimiseTab).
+      async function renderDepozitCentral(container) {
+        container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const d = await loadDepozitData();
+        if (d.error) {
+          container.innerHTML = `<div class="text-red-600 text-sm">${esc(d.error)}</div>`;
+          return;
+        }
+
         container.innerHTML = `
-    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
-      <div class="flex gap-2">
-        <button id="depozit-tab-stoc" class="depozit-subtab-btn rounded-lg px-4 py-2 text-sm font-medium border" style="border-color:var(--line)">Stocul depozitului central</button>
-        <button id="depozit-tab-trimise" class="depozit-subtab-btn rounded-lg px-4 py-2 text-sm font-medium border" style="border-color:var(--line)">Produse trimise către magazine (${produseTrimise.length})</button>
-      </div>
-      <div class="flex items-center gap-2 text-sm">
-        <label for="tva-procent-input" class="text-slate-500">TVA (%)</label>
-        <input id="tva-procent-input" type="number" step="0.01" min="0" value="${tvaProcentCurent}" class="border rounded-md px-2 py-1.5 text-sm w-20" title="Cotă TVA folosită la calculul automat al 'Preț cu TVA' pentru produse noi sau editate. Nu recalculează retroactiv produsele deja salvate.">
-        <button id="btn-salveaza-tva" class="rounded-md px-3 py-1.5 text-sm font-medium border" style="border-color:var(--line)">Salvează</button>
-      </div>
+    <div class="mb-4 flex items-center justify-end gap-2 text-sm">
+      <label for="tva-procent-input" class="text-slate-500">TVA (%)</label>
+      <input id="tva-procent-input" type="number" step="0.01" min="0" value="${d.tvaProcentCurent}" class="border rounded-md px-2 py-1.5 text-sm w-20" title="Cotă TVA folosită la calculul automat al 'Preț cu TVA' pentru produse noi sau editate. Nu recalculează retroactiv produsele deja salvate.">
+      <button id="btn-salveaza-tva" class="rounded-md px-3 py-1.5 text-sm font-medium border" style="border-color:var(--line)">Salvează</button>
     </div>
     <div id="depozit-subtab-content"></div>`;
 
         const sub = document.getElementById("depozit-subtab-content");
-        const btnStoc = document.getElementById("depozit-tab-stoc");
-        const btnTrimise = document.getElementById("depozit-tab-trimise");
         const refresh = () => renderDepozitCentral(container);
-        function activate(which) {
-          btnStoc.classList.toggle("btn-primary", which === "stoc");
-          btnTrimise.classList.toggle("btn-primary", which === "trimise");
-          if (which === "stoc") {
-            renderStocSubtab(
-              sub,
-              stocDisponibil,
-              agenti,
-              magazine,
-              reservedIds,
-              agentMagazinMap,
-              marci,
-              refresh,
-            );
-          } else {
-            renderTrimiseSubtab(
-              sub,
-              produseTrimise,
-              agenti,
-              magazine,
-              agentMagazinMap,
-              marci,
-              refresh,
-              comandaCtx,
-            );
-          }
-        }
-        btnStoc.addEventListener("click", () => activate("stoc"));
-        btnTrimise.addEventListener("click", () => activate("trimise"));
-        activate("stoc");
+        renderStocSubtab(
+          sub,
+          d.stocDisponibil,
+          d.agenti,
+          d.magazine,
+          d.reservedIds,
+          d.agentMagazinMap,
+          d.marci,
+          refresh,
+        );
 
         document
           .getElementById("btn-salveaza-tva")
@@ -1552,6 +1570,28 @@
               `TVA actualizat la ${procent}%. Se aplică produselor noi sau editate ulterior.`,
             );
           });
+      }
+
+      // TAB independent "Produse trimise către magazine".
+      async function renderProduseTrimiseTab(container) {
+        container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const d = await loadDepozitData();
+        if (d.error) {
+          container.innerHTML = `<div class="text-red-600 text-sm">${esc(d.error)}</div>`;
+          return;
+        }
+        const refresh = () => renderProduseTrimiseTab(container);
+        renderTrimiseSubtab(
+          container,
+          d.produseTrimise,
+          d.agenti,
+          d.magazine,
+          d.agentMagazinMap,
+          d.marci,
+          refresh,
+          d.comandaCtx,
+        );
+        bindVanzareButoane(d.produseTrimise, refresh);
       }
 
       function productRow(p, nr, agenti, magazine, isReserved, comandaInfo) {
@@ -1624,6 +1664,7 @@
     <td class="px-3 py-3 whitespace-nowrap">
       <button data-save-produs="${p.id}" class="save-produs-btn btn-primary rounded-md px-3 py-1.5 text-xs">Salvează</button>
       <button data-delete-produs="${p.id}" class="delete-produs-btn rounded-md px-3 py-1.5 text-xs font-semibold ml-1 bg-red-50 text-red-600 hover:bg-red-100">Șterge</button>
+      ${p.vanzare_directa && !p.vandut ? `<button type="button" data-vinde-produs="${p.id}" class="vinde-produs-btn rounded-md px-3 py-1.5 text-xs font-semibold ml-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100">Vinde produsul</button>` : ""}
     </td>
   </tr>`;
       }
@@ -2806,10 +2847,10 @@
         const status =
           c.status === "anulata" ? "anulata" : computeComandaStatus(lines);
         return `
-  <div class="bg-white rounded-xl border p-4 flex items-center justify-between gap-3 flex-wrap" style="border-color:var(--line)">
+  <div class="bg-white rounded-xl border p-2 flex items-center justify-between gap-3 flex-wrap" style="border-color:var(--line)">
     <div>
-      <div class="font-semibold text-sm">${esc(c.numar_comanda)} <span class="text-slate-400 font-normal">— ${esc(magazinLabel)}</span></div>
-      <div class="text-xs text-slate-400 mt-0.5">Agent: ${esc(c.agent || "—")} · ${new Date(c.created_at).toLocaleDateString("ro-RO")} · ${lines.length} produs${lines.length === 1 ? "" : "e"}</div>
+      <div class="font-semibold text-sm leading-tight">${esc(c.numar_comanda)} <span class="text-slate-400 font-normal">— ${esc(magazinLabel)}</span></div>
+      <div class="text-xs text-slate-400 leading-tight">Agent: ${esc(c.agent || "—")} · ${new Date(c.created_at).toLocaleDateString("ro-RO")} · ${lines.length} produs${lines.length === 1 ? "" : "e"}</div>
     </div>
     <div class="flex items-center gap-2">
       ${statusBadge(status)}
@@ -3264,10 +3305,10 @@
 
         container.innerHTML = `
     <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
-      <p class="text-sm text-slate-500">${(comenzi || []).length} comandă${(comenzi || []).length === 1 ? "" : "zi"}</p>
+      <p class="text-sm text-slate-500">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"}</p>
       <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Comandă nouă</button>
     </div>
-    <div class="space-y-3" id="comenzi-list"></div>`;
+    <div class="space-y-1.5" id="comenzi-list"></div>`;
 
         const list = document.getElementById("comenzi-list");
         if (!(comenzi || []).length) {
@@ -3365,10 +3406,10 @@
 
         container.innerHTML = `
     <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
-      <p class="text-sm text-slate-500">${myComenzi.length} comandă${myComenzi.length === 1 ? "" : "zi"} create de tine</p>
+      <p class="text-sm text-slate-500">${myComenzi.length} ${myComenzi.length === 1 ? "comandă" : "comenzi"} create de tine</p>
       <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm" ${magazineAsignate.length ? "" : 'disabled title="Nu ai niciun magazin alocat"'}>+ Comandă nouă</button>
     </div>
-    <div class="space-y-3" id="comenzi-list"></div>`;
+    <div class="space-y-1.5" id="comenzi-list"></div>`;
 
         const list = document.getElementById("comenzi-list");
         if (!myComenzi.length) {
@@ -3444,8 +3485,8 @@
         );
 
         container.innerHTML = `
-    <p class="text-sm text-slate-500 mb-4">${(comenzi || []).length} comandă${(comenzi || []).length === 1 ? "" : "zi"} pentru magazinul tău</p>
-    <div class="space-y-3" id="comenzi-list"></div>`;
+    <p class="text-sm text-slate-500 mb-4">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"} pentru magazinul tău</p>
+    <div class="space-y-1.5" id="comenzi-list"></div>`;
 
         const list = document.getElementById("comenzi-list");
         if (!(comenzi || []).length) {
@@ -3580,6 +3621,7 @@
             .from("produse")
             .select("*")
             .eq("magazin_id", currentUser.id)
+            .eq("vandut", false)
             .order("created_at", { ascending: true }),
           supa.from("comenzi").select("*").eq("magazin_id", currentUser.id),
           supa.from("comanda_produse").select("*"),
@@ -3610,6 +3652,7 @@
             <th class="px-3 py-3 font-medium">Alte costuri</th>
             <th class="px-3 py-3 font-medium">Total fără TVA</th>
             <th class="px-3 py-3 font-medium">Preț cu TVA</th>
+            <th class="px-3 py-3 font-medium">Acțiuni</th>
           </tr>
         </thead>
         <tbody>
@@ -3635,6 +3678,9 @@
             <td class="px-3 py-3 text-xs">${fmtNum(p.alte_costuri)}</td>
             <td class="px-3 py-3 text-xs font-medium">${fmtNum(p.total_fara_tva)}</td>
             <td class="px-3 py-3 text-xs font-medium">${fmtNum(p.pret_cu_tva)}</td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <button type="button" data-vinde-produs="${p.id}" class="vinde-produs-btn btn-primary rounded-md px-3 py-1.5 text-xs">Vinde produsul</button>
+            </td>
           </tr>`;
             })
             .join("")}
@@ -3653,6 +3699,8 @@
             deschideComandaInitiala(comandaInfo, linii || [], [currentProfile]);
           });
         });
+
+        bindVanzareButoane(produse || [], () => renderMagazinStoc(container));
       }
 
       // ------------------------------------------------------------------
@@ -4424,6 +4472,408 @@
     ${renderBateriiTable(produse || [], incarcari || [], false, true, magazine)}`;
 
         bindBateriiTableEvents(container, produse || [], incarcari || []);
+      }
+
+      // ==================================================================
+      // FEATURE: Vânzare produs către client final — magazinele își vând
+      // produsele din stocul propriu, iar admin/superadmin pot vinde
+      // produsele marcate "Vânzare directă". Funcționalitate 100%
+      // aditivă: coloane noi pe `produse` + un bucket nou de Storage +
+      // un tab nou de navigare per rol. Nu modifică nicio structură de
+      // date sau funcție existentă din aplicație.
+      //
+      // Reguli:
+      // - Poate iniția vânzarea: rolul "magazin" pentru produsele din
+      //   propriul stoc (magazin_id = auth.uid()), respectiv
+      //   admin/superadmin pentru produsele cu vanzare_directa = true.
+      // - La salvare se cer: Nume Prenume, Adresă, Telefon, Email,
+      //   fișier Factură, fișier P.V. de predare (ambele obligatorii) și,
+      //   dacă bifează "Garanție extinsă", și fișierul de Garanție
+      //   extinsă.
+      // - Produsul vândut (vandut = true) dispare automat din listele de
+      //   stoc (Stocul meu / Depozit central - Produse trimise) și apare
+      //   în tab-ul nou "Produse vândute".
+      // - Magazinul vede doar propriile vânzări; admin/superadmin văd
+      //   toate vânzările (din toate magazinele + vânzările directe) și
+      //   pot deschide fișierele încărcate. Agentul nu are acces la acest
+      //   tab.
+      //
+      // Migrare SQL necesară (o singură dată, în Supabase SQL editor):
+      //
+      //   alter table produse add column vandut boolean not null default false;
+      //   alter table produse add column data_vanzare timestamptz;
+      //   alter table produse add column vandut_de uuid references profiles(id);
+      //   alter table produse add column client_nume text;
+      //   alter table produse add column client_adresa text;
+      //   alter table produse add column client_telefon text;
+      //   alter table produse add column client_email text;
+      //   alter table produse add column garantie_extinsa boolean not null default false;
+      //   alter table produse add column factura_url text;
+      //   alter table produse add column pv_predare_url text;
+      //   alter table produse add column garantie_extinsa_url text;
+      //
+      //   -- Bucket nou de Storage (privat), creat din Supabase Dashboard
+      //   -- sau via SQL: insert into storage.buckets (id, name, public)
+      //   -- values ('documente-vanzari', 'documente-vanzari', false);
+      //
+      //   create policy "upload documente vanzari"
+      //     on storage.objects for insert
+      //     with check (
+      //       bucket_id = 'documente-vanzari' and (
+      //         exists (
+      //           select 1 from produse p
+      //           where p.id::text = (storage.foldername(name))[1]
+      //           and p.magazin_id = auth.uid()
+      //         )
+      //         or exists (
+      //           select 1 from profiles pr where pr.id = auth.uid()
+      //           and pr.role in ('admin','superadmin')
+      //         )
+      //       )
+      //     );
+      //   create policy "select documente vanzari"
+      //     on storage.objects for select
+      //     using (
+      //       bucket_id = 'documente-vanzari' and (
+      //         exists (
+      //           select 1 from produse p
+      //           where p.id::text = (storage.foldername(name))[1]
+      //           and p.magazin_id = auth.uid()
+      //         )
+      //         or exists (
+      //           select 1 from profiles pr where pr.id = auth.uid()
+      //           and pr.role in ('admin','superadmin')
+      //         )
+      //       )
+      //     );
+      // ==================================================================
+
+      const BUCKET_VANZARI = "documente-vanzari";
+
+      // Încarcă un fișier în bucketul privat de documente de vânzare, sub
+      // folderul produsului (produs_id), cu un nume unic. Returnează
+      // path-ul salvat în Storage (nu URL public — bucketul e privat).
+      async function incarcaDocumentVanzare(produsId, file, tip) {
+        const extensie = (file.name.split(".").pop() || "bin").toLowerCase();
+        const path = `${produsId}/${tip}_${Date.now()}.${extensie}`;
+        const { error } = await supa.storage
+          .from(BUCKET_VANZARI)
+          .upload(path, file, { upsert: true, contentType: file.type });
+        if (error) throw error;
+        return path;
+      }
+
+      // Generează un URL semnat, temporar, pentru vizualizarea/descărcarea
+      // unui document privat de vânzare.
+      async function obtineUrlSemnatVanzare(path) {
+        const { data, error } = await supa.storage
+          .from(BUCKET_VANZARI)
+          .createSignedUrl(path, 300);
+        if (error) throw error;
+        return data.signedUrl;
+      }
+
+      // Leagă click-urile pe orice buton "Vinde produsul" prezent în DOM
+      // (marcat cu data-vinde-produs) de modalul de vânzare. Funcție
+      // generică, reutilizabilă din orice listă de produse (stocul unui
+      // magazin sau produsele "Vânzare directă" din Depozit central) —
+      // nu modifică logica de randare/salvare a rândurilor existente.
+      function bindVanzareButoane(produse, refresh) {
+        document.querySelectorAll("[data-vinde-produs]").forEach((btn) => {
+          const produs = (produse || []).find(
+            (p) => p.id === btn.getAttribute("data-vinde-produs"),
+          );
+          if (!produs) return;
+          btn.addEventListener("click", () => {
+            deschideModalVanzareProdus(produs, refresh);
+          });
+        });
+      }
+
+      // Modal formular pentru vânzarea unui produs către clientul final.
+      function deschideModalVanzareProdus(produs, refresh) {
+        const overlay = document.createElement("div");
+        overlay.id = "vanzare-produs-overlay";
+        overlay.className =
+          "fixed inset-0 z-40 flex items-center justify-center px-4 py-8 overflow-y-auto";
+        overlay.style.background = "rgba(15,20,25,0.55)";
+        overlay.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg fade-in my-auto">
+      <h2 class="text-lg font-bold mb-1">Vinde produsul ${esc(produs.id_produs)}</h2>
+      <p class="text-sm text-slate-500 mb-5">Completează datele clientului final și încarcă documentele obligatorii.</p>
+      <form id="form-vanzare-produs" class="space-y-4">
+        <div>${fieldLabel("Nume Prenume")}<input type="text" id="vanzare-client-nume" required class="${inputBase()}"></div>
+        <div>${fieldLabel("Adresă")}<input type="text" id="vanzare-client-adresa" required class="${inputBase()}"></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>${fieldLabel("Telefon")}<input type="text" id="vanzare-client-telefon" required class="${inputBase()}"></div>
+          <div>${fieldLabel("Email")}<input type="email" id="vanzare-client-email" required class="${inputBase()}"></div>
+        </div>
+        <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input type="checkbox" id="vanzare-garantie-extinsa" class="rounded border-slate-300">
+          Garanție extinsă
+        </label>
+        <div>${fieldLabel("Factură")}<input type="file" id="vanzare-file-factura" required accept="application/pdf,image/*" class="${inputBase()} text-slate-600"></div>
+        <div>${fieldLabel("P.V. de predare")}<input type="file" id="vanzare-file-pv" required accept="application/pdf,image/*" class="${inputBase()} text-slate-600"></div>
+        <div id="vanzare-garantie-file-wrap" class="hidden">${fieldLabel("Garanție extinsă (document)")}<input type="file" id="vanzare-file-garantie" accept="application/pdf,image/*" class="${inputBase()} text-slate-600"></div>
+        <div class="flex gap-2 pt-1">
+          <button type="button" id="vanzare-produs-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
+          <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Salvează vânzarea</button>
+        </div>
+        <p id="vanzare-produs-msg" class="text-sm text-center"></p>
+      </form>
+    </div>`;
+        document.body.appendChild(overlay);
+
+        document
+          .getElementById("vanzare-produs-cancel")
+          .addEventListener("click", () => overlay.remove());
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+
+        const garantieCheckbox = document.getElementById(
+          "vanzare-garantie-extinsa",
+        );
+        const garantieFileWrap = document.getElementById(
+          "vanzare-garantie-file-wrap",
+        );
+        garantieCheckbox.addEventListener("change", () => {
+          garantieFileWrap.classList.toggle(
+            "hidden",
+            !garantieCheckbox.checked,
+          );
+        });
+
+        document
+          .getElementById("form-vanzare-produs")
+          .addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const msg = document.getElementById("vanzare-produs-msg");
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const garantieBifata = garantieCheckbox.checked;
+            const fileFactura = document.getElementById("vanzare-file-factura")
+              .files[0];
+            const filePv = document.getElementById("vanzare-file-pv").files[0];
+            const fileGarantie = document.getElementById(
+              "vanzare-file-garantie",
+            ).files[0];
+
+            if (!fileFactura || !filePv) {
+              msg.textContent = "Factura și P.V. de predare sunt obligatorii.";
+              msg.className = "text-sm text-center text-red-600";
+              return;
+            }
+            if (garantieBifata && !fileGarantie) {
+              msg.textContent =
+                "Ai bifat Garanție extinsă — încarcă și documentul aferent.";
+              msg.className = "text-sm text-center text-red-600";
+              return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Se salvează...";
+            msg.textContent = "";
+
+            try {
+              const facturaPath = await incarcaDocumentVanzare(
+                produs.id,
+                fileFactura,
+                "factura",
+              );
+              const pvPath = await incarcaDocumentVanzare(
+                produs.id,
+                filePv,
+                "pv_predare",
+              );
+              const garantiePath = garantieBifata
+                ? await incarcaDocumentVanzare(
+                    produs.id,
+                    fileGarantie,
+                    "garantie_extinsa",
+                  )
+                : null;
+
+              const { error } = await supa
+                .from("produse")
+                .update({
+                  vandut: true,
+                  data_vanzare: new Date().toISOString(),
+                  vandut_de: currentUser.id,
+                  client_nume: document.getElementById("vanzare-client-nume")
+                    .value,
+                  client_adresa: document.getElementById(
+                    "vanzare-client-adresa",
+                  ).value,
+                  client_telefon: document.getElementById(
+                    "vanzare-client-telefon",
+                  ).value,
+                  client_email: document.getElementById("vanzare-client-email")
+                    .value,
+                  garantie_extinsa: garantieBifata,
+                  factura_url: facturaPath,
+                  pv_predare_url: pvPath,
+                  garantie_extinsa_url: garantiePath,
+                })
+                .eq("id", produs.id);
+              if (error) throw error;
+
+              toast("Produsul a fost marcat ca vândut.");
+              overlay.remove();
+              if (typeof refresh === "function") refresh();
+            } catch (err) {
+              msg.textContent = "Eroare la salvarea vânzării: " + err.message;
+              msg.className = "text-sm text-center text-red-600";
+              submitBtn.disabled = false;
+              submitBtn.textContent = "Salvează vânzarea";
+            }
+          });
+      }
+
+      // Buton pentru deschiderea unui document privat de vânzare
+      // într-un tab nou, printr-un URL semnat generat la cerere.
+      function bindDeschideDocumenteVanzare(container) {
+        container.querySelectorAll("[data-doc-path]").forEach((link) => {
+          link.addEventListener("click", async (e) => {
+            e.preventDefault();
+            const path = link.getAttribute("data-doc-path");
+            link.textContent = "Se deschide...";
+            try {
+              const url = await obtineUrlSemnatVanzare(path);
+              window.open(url, "_blank");
+            } catch (err) {
+              toast("Eroare la deschiderea documentului: " + err.message, true);
+            } finally {
+              link.textContent = link.getAttribute("data-doc-label");
+            }
+          });
+        });
+      }
+
+      function documentLinkHtml(path, label) {
+        if (!path) return `<span class="text-slate-300">—</span>`;
+        return `<a href="#" data-doc-path="${esc(path)}" data-doc-label="${esc(label)}" class="text-[var(--teal-dark)] underline decoration-dotted">${esc(label)}</a>`;
+      }
+
+      function randVanzareHtml(p, nr, magazinLabel) {
+        return `
+  <tr class="border-b last:border-0 align-top" style="border-color:var(--line)">
+    <td class="px-3 py-3 text-slate-400">${nr}</td>
+    <td class="px-3 py-3 font-mono text-xs">${esc(p.id_produs)}</td>
+    ${magazinLabel !== null ? `<td class="px-3 py-3 text-xs">${esc(magazinLabel)}</td>` : ""}
+    <td class="px-3 py-3 text-xs text-slate-500">${p.data_vanzare ? new Date(p.data_vanzare).toLocaleDateString("ro-RO") : "—"}</td>
+    <td class="px-3 py-3 text-xs">${esc(p.marca || "—")}</td>
+    <td class="px-3 py-3 text-xs">${esc(p.culoare || "—")}</td>
+    <td class="px-3 py-3 text-xs font-mono">${esc(p.vin || "—")}</td>
+    <td class="px-3 py-3 text-xs">${esc(p.client_nume || "—")}</td>
+    <td class="px-3 py-3 text-xs text-slate-500">${esc(p.client_telefon || "—")}</td>
+    <td class="px-3 py-3 text-xs text-slate-500">${esc(p.client_email || "—")}</td>
+    <td class="px-3 py-3 text-xs text-slate-500">${esc(p.client_adresa || "—")}</td>
+    <td class="px-3 py-3 text-xs space-x-2">
+      ${documentLinkHtml(p.factura_url, "Factură")}
+      ${documentLinkHtml(p.pv_predare_url, "P.V.")}
+      ${documentLinkHtml(p.garantie_extinsa_url, "Garanție")}
+    </td>
+  </tr>`;
+      }
+
+      function vanzariTableHtml(produseVandute, magazinLabelFn) {
+        if (!produseVandute.length) {
+          return `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun produs vândut încă.</p></div>`;
+        }
+        const showMagazinCol = typeof magazinLabelFn === "function";
+        return `
+    <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
+      <table class="w-full text-sm min-w-[1100px]">
+        <thead>
+          <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
+            <th class="px-3 py-3 font-medium">Nr.</th>
+            <th class="px-3 py-3 font-medium">ID produs</th>
+            ${showMagazinCol ? '<th class="px-3 py-3 font-medium">Magazin</th>' : ""}
+            <th class="px-3 py-3 font-medium">Data vânzării</th>
+            <th class="px-3 py-3 font-medium">Marcă</th>
+            <th class="px-3 py-3 font-medium">Culoare</th>
+            <th class="px-3 py-3 font-medium">VIN</th>
+            <th class="px-3 py-3 font-medium">Client</th>
+            <th class="px-3 py-3 font-medium">Telefon</th>
+            <th class="px-3 py-3 font-medium">Email</th>
+            <th class="px-3 py-3 font-medium">Adresă</th>
+            <th class="px-3 py-3 font-medium">Documente</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${produseVandute
+            .map((p, i) =>
+              randVanzareHtml(
+                p,
+                i + 1,
+                showMagazinCol ? magazinLabelFn(p) : null,
+              ),
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>`;
+      }
+
+      // Dispatcher tab "Produse vândute" — comportament diferit per rol.
+      function renderVanduteTab(container) {
+        if (currentProfile.role === "magazin")
+          return renderVanduteMagazin(container);
+        return renderVanduteAdmin(container);
+      }
+
+      // Magazin: doar propriile vânzări (fără coloana Magazin — gestionează
+      // doar produsele proprii).
+      async function renderVanduteMagazin(container) {
+        container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const { data: produse, error } = await supa
+          .from("produse")
+          .select("*")
+          .eq("magazin_id", currentUser.id)
+          .eq("vandut", true)
+          .order("data_vanzare", { ascending: false });
+        if (error) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(error.message)}</div>`;
+          return;
+        }
+        container.innerHTML = `
+    <p class="text-sm text-slate-500 mb-4">${(produse || []).length} produs${(produse || []).length === 1 ? "" : "e"} vândut${(produse || []).length === 1 ? "" : "e"}</p>
+    ${vanzariTableHtml(produse || [], null)}`;
+        bindDeschideDocumenteVanzare(container);
+      }
+
+      // Admin / Superadmin: toate vânzările — din toate magazinele plus
+      // vânzările directe proprii.
+      async function renderVanduteAdmin(container) {
+        container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const [
+          { data: produse, error: prodErr },
+          { data: profiles, error: profErr },
+        ] = await Promise.all([
+          supa
+            .from("produse")
+            .select("*")
+            .eq("vandut", true)
+            .order("data_vanzare", { ascending: false }),
+          supa.from("profiles").select("*"),
+        ]);
+        if (prodErr || profErr) {
+          const e = prodErr || profErr;
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(e.message)}</div>`;
+          return;
+        }
+        const magazine = (profiles || []).filter((p) => p.role === "magazin");
+        const magazinLabelFn = (p) => {
+          if (p.vanzare_directa) return "Vânzare directă";
+          const m = magazine.find((x) => x.id === p.magazin_id);
+          return m
+            ? `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`
+            : "—";
+        };
+        container.innerHTML = `
+    <p class="text-sm text-slate-500 mb-4">${(produse || []).length} produs${(produse || []).length === 1 ? "" : "e"} vândut${(produse || []).length === 1 ? "" : "e"} în total</p>
+    ${vanzariTableHtml(produse || [], magazinLabelFn)}`;
+        bindDeschideDocumenteVanzare(container);
       }
     </script>
   </body>
