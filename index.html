@@ -6,6 +6,7 @@
     <title>Distribuție Vehicule Electrice</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600&display=swap"
@@ -158,6 +159,25 @@
       let currentProfile = null;
       let recoveryMode = false;
       let currentTabKey = null;
+      // Termenul de căutare curent, păstrat separat pentru fiecare meniu
+      // (tab), ca la schimbarea meniului să nu se piardă căutarea anterioară.
+      const tabSearchTerms = {};
+      let searchDebounceTimer = null;
+
+      // Construiește un filtru Supabase de tip "OR ilike" pe mai multe
+      // coloane, pentru căutare server-side. Întoarce null dacă termenul e
+      // gol (caz în care niciun filtru nu trebuie aplicat interogării).
+      function buildSearchOrFilter(term, columns) {
+        const t = (term || "").trim();
+        if (!t) return null;
+        // Virgula și parantezele au sens special în sintaxa .or() din
+        // PostgREST — le eliminăm din termenul căutat ca să nu spargă
+        // filtrul construit mai jos.
+        const curatat = t.replace(/[(),]/g, " ").trim();
+        if (!curatat) return null;
+        const escapat = curatat.replace(/[%_]/g, (m) => "\\" + m);
+        return columns.map((c) => `${c}.ilike.%${escapat}%`).join(",");
+      }
 
       // ------------------------------------------------------------------
       // UTIL
@@ -575,9 +595,15 @@
       </div>
     </aside>
     <main class="flex-1 min-w-0">
-      <header class="bg-white border-b px-4 md:px-6 py-4 flex items-center gap-3" style="border-color:var(--line)">
-        <button id="btn-open-sidebar" class="md:hidden text-slate-600 hover:text-slate-900 text-xl leading-none px-1" aria-label="Deschide meniul">☰</button>
-        <h1 id="page-title" class="text-base md:text-lg font-bold text-slate-800"></h1>
+      <header class="bg-white border-b px-4 md:px-6 py-4" style="border-color:var(--line)">
+        <div class="flex items-center gap-3">
+          <button id="btn-open-sidebar" class="md:hidden text-slate-600 hover:text-slate-900 text-xl leading-none px-1" aria-label="Deschide meniul">☰</button>
+          <h1 id="page-title" class="text-base md:text-lg font-bold text-slate-800"></h1>
+        </div>
+        <div class="mt-2 relative w-full max-w-xs">
+          <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="global-search-input" type="text" placeholder="Caută..." autocomplete="off" class="w-full border rounded-md pl-8 pr-3 py-1.5 text-sm" style="border-color:var(--line)">
+        </div>
       </header>
       <div id="page-content" class="p-4 md:p-6"></div>
     </main>
@@ -654,6 +680,7 @@
             { key: "vandute", label: "Produse vândute" },
             { key: "comenzi", label: "Comenzile mele" },
             { key: "baterii", label: "Încărcare baterii" },
+            { key: "statistici", label: "Statistici" },
           ];
         if (role === "magazin_hub")
           return [
@@ -661,12 +688,14 @@
             { key: "vandute", label: "Produse vândute" },
             { key: "comenzi", label: "Comenzi magazine" },
             { key: "baterii", label: "Încărcare baterii" },
+            { key: "statistici", label: "Statistici" },
           ];
         if (role === "agent")
           return [
             { key: "comenzi", label: "Comenzile mele" },
             { key: "stoc-alocat", label: "Stoc magazine alocate" },
             { key: "baterii", label: "Încărcare baterii" },
+            { key: "statistici", label: "Statistici" },
           ];
         if (role === "admin")
           return [
@@ -675,6 +704,7 @@
             { key: "vandute", label: "Produse vândute" },
             { key: "comenzi", label: "Comenzi" },
             { key: "baterii", label: "Încărcare baterii" },
+            { key: "statistici", label: "Statistici" },
           ];
         if (role === "superadmin")
           return [
@@ -683,6 +713,7 @@
             { key: "vandute", label: "Produse vândute" },
             { key: "comenzi", label: "Comenzi" },
             { key: "baterii", label: "Încărcare baterii" },
+            { key: "statistici", label: "Statistici" },
             { key: "aprobari", label: "Aprobări" },
             { key: "utilizatori", label: "Administrare utilizatori" },
           ];
@@ -693,6 +724,14 @@
         currentTabKey = key;
         const t = tabs.find((x) => x.key === key);
         document.getElementById("page-title").textContent = t ? t.label : "";
+        bindGlobalSearch();
+        dispatchTab(key);
+      }
+
+      // Randează conținutul tab-ului curent (key) în #page-content. Extrasă
+      // separat de openTab ca să poată fi rechemată și de câmpul de căutare
+      // (care nu trebuie să reseteze titlul, meniul sau focusul din header).
+      function dispatchTab(key) {
         const content = document.getElementById("page-content");
         if (key === "utilizatori") {
           renderUserAdmin(content);
@@ -712,6 +751,8 @@
           renderVanduteTab(content);
         } else if (key === "aprobari") {
           renderAprobari(content);
+        } else if (key === "statistici") {
+          renderStatisticiTab(content);
         } else if (key === "comenzi") {
           if (currentProfile.role === "agent") {
             renderComenziAgent(content);
@@ -728,6 +769,24 @@
         <p class="text-slate-400 text-sm">Această secțiune va fi adăugată ulterior.</p>
       </div>`;
         }
+      }
+
+      // Leagă (sau re-leagă, la schimbarea tab-ului) câmpul de căutare din
+      // header de tab-ul curent — valoarea afișată vine din termenul salvat
+      // pentru acel tab, iar tastarea (cu debounce) re-randează doar
+      // #page-content, cu o interogare Supabase filtrată server-side.
+      function bindGlobalSearch() {
+        const input = document.getElementById("global-search-input");
+        if (!input) return;
+        input.value = tabSearchTerms[currentTabKey] || "";
+        input.oninput = () => {
+          clearTimeout(searchDebounceTimer);
+          const valoare = input.value;
+          searchDebounceTimer = setTimeout(() => {
+            tabSearchTerms[currentTabKey] = valoare;
+            dispatchTab(currentTabKey);
+          }, 350);
+        };
       }
 
       // ==================================================================
@@ -891,10 +950,16 @@
       async function renderUserAdmin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
 
-        const { data: profiles, error } = await supa
+        let profilesQuery = supa
           .from("profiles")
           .select("*")
           .order("created_at", { ascending: false });
+        const orFilterUsers = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          ["email", "nume", "telefon", "filiala"],
+        );
+        if (orFilterUsers) profilesQuery = profilesQuery.or(orFilterUsers);
+        const { data: profiles, error } = await profilesQuery;
         if (error) {
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(error.message)}</div>`;
           return;
@@ -1485,6 +1550,23 @@
       // către magazine" — extras dintr-o singură funcție ca să nu se
       // dubleze interogările către Supabase.
       async function loadDepozitData() {
+        const termenCautare = tabSearchTerms[currentTabKey] || "";
+        let produseQuery = supa
+          .from("produse")
+          .select("*")
+          .order("created_at", { ascending: true });
+        const orFilter = buildSearchOrFilter(termenCautare, [
+          "id_produs",
+          "categorie",
+          "marca",
+          "culoare",
+          "vin",
+          "agent",
+          "telefon",
+          "adresa_facturare",
+        ]);
+        if (orFilter) produseQuery = produseQuery.or(orFilter);
+
         const [
           { data: produse, error: prodErr },
           { data: profiles, error: profErr },
@@ -1492,10 +1574,7 @@
           { data: asocieri, error: asoErr },
           { data: comenzi, error: comErr },
         ] = await Promise.all([
-          supa
-            .from("produse")
-            .select("*")
-            .order("created_at", { ascending: true }),
+          produseQuery,
           supa.from("profiles").select("*"),
           supa.from("comanda_produse").select("*"),
           supa.from("agent_magazine").select("*"),
@@ -3320,16 +3399,23 @@
       async function renderComenziAdmin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
 
+        let comenziQuery = supa
+          .from("comenzi")
+          .select("*")
+          .order("created_at", { ascending: false });
+        const orFilterAdmin = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          ["numar_comanda"],
+        );
+        if (orFilterAdmin) comenziQuery = comenziQuery.or(orFilterAdmin);
+
         const [
           { data: comenzi, error: comErr },
           { data: linii, error: liniiErr },
           { data: profiles, error: profErr },
           { data: produse, error: prodErr },
         ] = await Promise.all([
-          supa
-            .from("comenzi")
-            .select("*")
-            .order("created_at", { ascending: false }),
+          comenziQuery,
           supa.from("comanda_produse").select("*"),
           supa.from("profiles").select("*"),
           supa.from("produse").select("*"),
@@ -3421,11 +3507,18 @@
             .from("agent_magazine")
             .select("*")
             .eq("agent_id", currentUser.id),
-          supa
-            .from("comenzi")
-            .select("*")
-            .eq("creat_de", currentUser.id)
-            .order("created_at", { ascending: false }),
+          (() => {
+            let q = supa
+              .from("comenzi")
+              .select("*")
+              .eq("creat_de", currentUser.id)
+              .order("created_at", { ascending: false });
+            const orFilter = buildSearchOrFilter(
+              tabSearchTerms[currentTabKey] || "",
+              ["numar_comanda"],
+            );
+            return orFilter ? q.or(orFilter) : q;
+          })(),
           supa.from("comanda_produse").select("*"),
           supa.from("profiles").select("*"),
           supa.from("produse").select("*"),
@@ -3514,11 +3607,18 @@
           { data: comenzi, error: comErr },
           { data: linii, error: liniiErr },
         ] = await Promise.all([
-          supa
-            .from("comenzi")
-            .select("*")
-            .eq("magazin_id", currentUser.id)
-            .order("created_at", { ascending: false }),
+          (() => {
+            let q = supa
+              .from("comenzi")
+              .select("*")
+              .eq("magazin_id", currentUser.id)
+              .order("created_at", { ascending: false });
+            const orFilter = buildSearchOrFilter(
+              tabSearchTerms[currentTabKey] || "",
+              ["numar_comanda"],
+            );
+            return orFilter ? q.or(orFilter) : q;
+          })(),
           supa.from("comanda_produse").select("*"),
         ]);
 
@@ -3595,11 +3695,18 @@
           { data: comenzi, error: comErr },
           { data: linii, error: liniiErr },
         ] = await Promise.all([
-          supa
-            .from("comenzi")
-            .select("*")
-            .in("magazin_id", magazinIds)
-            .order("created_at", { ascending: false }),
+          (() => {
+            let q = supa
+              .from("comenzi")
+              .select("*")
+              .in("magazin_id", magazinIds)
+              .order("created_at", { ascending: false });
+            const orFilter = buildSearchOrFilter(
+              tabSearchTerms[currentTabKey] || "",
+              ["numar_comanda"],
+            );
+            return orFilter ? q.or(orFilter) : q;
+          })(),
           supa.from("comanda_produse").select("*"),
         ]);
         if (comErr || liniiErr) {
@@ -3650,15 +3757,22 @@
       async function renderAprobari(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
 
+        let comenziQuery = supa
+          .from("comenzi")
+          .select("*")
+          .eq("stergere_ceruta", true)
+          .order("stergere_ceruta_la", { ascending: false });
+        const orFilter = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          ["numar_comanda"],
+        );
+        if (orFilter) comenziQuery = comenziQuery.or(orFilter);
+
         const [
           { data: comenzi, error: comErr },
           { data: profiles, error: profErr },
         ] = await Promise.all([
-          supa
-            .from("comenzi")
-            .select("*")
-            .eq("stergere_ceruta", true)
-            .order("stergere_ceruta_la", { ascending: false }),
+          comenziQuery,
           supa.from("profiles").select("*"),
         ]);
 
@@ -3740,17 +3854,23 @@
       // ------------------------------------------------------------------
       async function renderMagazinStoc(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        let produseQuery = supa
+          .from("produse")
+          .select("*")
+          .eq("magazin_id", currentUser.id)
+          .eq("vandut", false)
+          .order("created_at", { ascending: true });
+        const orFilter = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          ["id_produs", "agent", "categorie", "marca", "culoare", "vin"],
+        );
+        if (orFilter) produseQuery = produseQuery.or(orFilter);
         const [
           { data: produse, error },
           { data: comenzi, error: comErr },
           { data: linii, error: liniiErr },
         ] = await Promise.all([
-          supa
-            .from("produse")
-            .select("*")
-            .eq("magazin_id", currentUser.id)
-            .eq("vandut", false)
-            .order("created_at", { ascending: true }),
+          produseQuery,
           supa.from("comenzi").select("*").eq("magazin_id", currentUser.id),
           supa.from("comanda_produse").select("*"),
         ]);
@@ -3865,11 +3985,18 @@
           { data: comenzi, error: comErr },
           { data: linii, error: liniiErr },
         ] = await Promise.all([
-          supa
-            .from("produse")
-            .select("*")
-            .in("magazin_id", magazinIds)
-            .order("created_at", { ascending: true }),
+          (() => {
+            let q = supa
+              .from("produse")
+              .select("*")
+              .in("magazin_id", magazinIds)
+              .order("created_at", { ascending: true });
+            const orFilter = buildSearchOrFilter(
+              tabSearchTerms[currentTabKey] || "",
+              ["id_produs", "categorie", "marca", "culoare", "vin"],
+            );
+            return orFilter ? q.or(orFilter) : q;
+          })(),
           supa.from("comenzi").select("*").in("magazin_id", magazinIds),
           supa.from("comanda_produse").select("*"),
         ]);
@@ -3983,12 +4110,19 @@
           { data: comenzi, error: comErr },
           { data: linii, error: liniiErr },
         ] = await Promise.all([
-          supa
-            .from("produse")
-            .select("*")
-            .in("magazin_id", magazinIds)
-            .eq("vandut", false)
-            .order("created_at", { ascending: true }),
+          (() => {
+            let q = supa
+              .from("produse")
+              .select("*")
+              .in("magazin_id", magazinIds)
+              .eq("vandut", false)
+              .order("created_at", { ascending: true });
+            const orFilter = buildSearchOrFilter(
+              tabSearchTerms[currentTabKey] || "",
+              ["id_produs", "categorie", "marca", "culoare", "vin"],
+            );
+            return orFilter ? q.or(orFilter) : q;
+          })(),
           supa.from("comenzi").select("*").in("magazin_id", magazinIds),
           supa.from("comanda_produse").select("*"),
         ]);
@@ -4651,12 +4785,18 @@
       // încărcării de azi.
       async function renderBateriiMagazin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
-        const { data: produse, error } = await supa
+        let bateriiQuery = supa
           .from("produse")
           .select("*")
           .eq("magazin_id", currentUser.id)
           .eq("vandut", false)
           .order("created_at", { ascending: true });
+        const orFilterBatMag = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          ["id_produs"],
+        );
+        if (orFilterBatMag) bateriiQuery = bateriiQuery.or(orFilterBatMag);
+        const { data: produse, error } = await bateriiQuery;
         if (error) {
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(error.message)}</div>`;
           return;
@@ -4733,12 +4873,19 @@
           container.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nu ai niciun magazin alocat.</p></div>`;
           return;
         }
-        const { data: produse, error: prodErr } = await supa
+        let bateriiQueryAgent = supa
           .from("produse")
           .select("*")
           .in("magazin_id", magazinIds)
           .eq("vandut", false)
           .order("created_at", { ascending: true });
+        const orFilterBatAgent = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          ["id_produs"],
+        );
+        if (orFilterBatAgent)
+          bateriiQueryAgent = bateriiQueryAgent.or(orFilterBatAgent);
+        const { data: produse, error: prodErr } = await bateriiQueryAgent;
         if (prodErr) {
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(prodErr.message)}</div>`;
           return;
@@ -4786,12 +4933,19 @@
           container.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun magazin alocat.</p></div>`;
           return;
         }
-        const { data: produse, error: prodErr } = await supa
+        let bateriiQueryHub = supa
           .from("produse")
           .select("*")
           .in("magazin_id", magazinIds)
           .eq("vandut", false)
           .order("created_at", { ascending: true });
+        const orFilterBatHub = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          ["id_produs"],
+        );
+        if (orFilterBatHub)
+          bateriiQueryHub = bateriiQueryHub.or(orFilterBatHub);
+        const { data: produse, error: prodErr } = await bateriiQueryHub;
         if (prodErr) {
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(prodErr.message)}</div>`;
           return;
@@ -4819,16 +4973,23 @@
       // magazin (magazin_id setat).
       async function renderBateriiAdmin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        let bateriiQueryAdmin = supa
+          .from("produse")
+          .select("*")
+          .not("magazin_id", "is", null)
+          .eq("vandut", false)
+          .order("created_at", { ascending: true });
+        const orFilterBatAdmin = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          ["id_produs"],
+        );
+        if (orFilterBatAdmin)
+          bateriiQueryAdmin = bateriiQueryAdmin.or(orFilterBatAdmin);
         const [
           { data: produse, error: prodErr },
           { data: profiles, error: profErr },
         ] = await Promise.all([
-          supa
-            .from("produse")
-            .select("*")
-            .not("magazin_id", "is", null)
-            .eq("vandut", false)
-            .order("created_at", { ascending: true }),
+          bateriiQueryAdmin,
           supa.from("profiles").select("*"),
         ]);
         if (prodErr || profErr) {
@@ -5252,12 +5413,26 @@
       // doar produsele proprii).
       async function renderVanduteMagazin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
-        const { data: produse, error } = await supa
+        let vanduteQuery = supa
           .from("produse")
           .select("*")
           .eq("magazin_id", currentUser.id)
           .eq("vandut", true)
           .order("data_vanzare", { ascending: false });
+        const orFilter = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          [
+            "id_produs",
+            "marca",
+            "culoare",
+            "vin",
+            "client_nume",
+            "client_telefon",
+            "client_email",
+          ],
+        );
+        if (orFilter) vanduteQuery = vanduteQuery.or(orFilter);
+        const { data: produse, error } = await vanduteQuery;
         if (error) {
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(error.message)}</div>`;
           return;
@@ -5302,12 +5477,26 @@
           container.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun magazin alocat.</p></div>`;
           return;
         }
-        const { data: produse, error: prodErr } = await supa
+        let vanduteQueryHub = supa
           .from("produse")
           .select("*")
           .in("magazin_id", magazinIds)
           .eq("vandut", true)
           .order("data_vanzare", { ascending: false });
+        const orFilterHub = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          [
+            "id_produs",
+            "marca",
+            "culoare",
+            "vin",
+            "client_nume",
+            "client_telefon",
+            "client_email",
+          ],
+        );
+        if (orFilterHub) vanduteQueryHub = vanduteQueryHub.or(orFilterHub);
+        const { data: produse, error: prodErr } = await vanduteQueryHub;
         if (prodErr) {
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(prodErr.message)}</div>`;
           return;
@@ -5337,15 +5526,30 @@
       // vânzările directe proprii.
       async function renderVanduteAdmin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        let vanduteQueryAdmin = supa
+          .from("produse")
+          .select("*")
+          .eq("vandut", true)
+          .order("data_vanzare", { ascending: false });
+        const orFilterAdmin2 = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          [
+            "id_produs",
+            "marca",
+            "culoare",
+            "vin",
+            "client_nume",
+            "client_telefon",
+            "client_email",
+          ],
+        );
+        if (orFilterAdmin2)
+          vanduteQueryAdmin = vanduteQueryAdmin.or(orFilterAdmin2);
         const [
           { data: produse, error: prodErr },
           { data: profiles, error: profErr },
         ] = await Promise.all([
-          supa
-            .from("produse")
-            .select("*")
-            .eq("vandut", true)
-            .order("data_vanzare", { ascending: false }),
+          vanduteQueryAdmin,
           supa.from("profiles").select("*"),
         ]);
         if (prodErr || profErr) {
@@ -5374,6 +5578,869 @@
         bindDeschideDocumenteVanzare(container);
         bindIstoricBaterieVanzare(container, produse || [], incarcariV || []);
         bindAdresaToggle(container);
+      }
+
+      // ==================================================================
+      // STATISTICI — modul aditiv, comun tuturor rolurilor. Nu modifică
+      // nicio structură/funcție/tabel existent din aplicație și nu
+      // necesită nicio migrare SQL (folosește exclusiv tabelele deja
+      // existente: produse, comenzi, comanda_produse, incarcari_baterie,
+      // profiles, agent_magazine, hub_magazine).
+      //
+      // Comportament: un raport filtrabil (Produse sau Comenzi), afișat
+      // ca listă completă cu toate coloanele la care rolul curent are
+      // acces (aceleași reguli de vizibilitate ca în restul aplicației:
+      // "Preț intrare" și "Adaos" doar pentru admin/superadmin). Câmpul
+      // de căutare din header caută în aceleași coloane accesibile.
+      // Butonul "Exportă Excel" exportă exact rezultatul afișat curent.
+      // ==================================================================
+
+      // Starea filtrelor e ținută la nivel de modul (nu local funcției de
+      // randare) ca să supraviețuiască re-randărilor declanșate de căsuța
+      // de căutare globală (care re-cheamă dispatchTab la fiecare
+      // modificare) — altfel utilizatorul și-ar pierde filtrele aplicate
+      // de fiecare dată când tastează în căutare.
+      let statisticiState = null;
+
+      function statisticiStateImplicit() {
+        const presets = presetariPerioadaStatistici();
+        const lunaCurenta = presets.find((p) => p.key === "luna");
+        return {
+          tip: "produse", // "produse" | "comenzi"
+          subTipuri: ["toate"], // subset din: "toate" | "stoc_central" | "stoc_magazine" | "vandute" — "toate" e mereu exclusiv, celelalte se pot combina (multi-select)
+          perioada: "luna",
+          start: lunaCurenta.start,
+          end: lunaCurenta.end,
+          magazinId: "",
+          agentNume: "",
+          categorie: "",
+          marca: "",
+          culoare: "",
+          garantieExtinsa: "", // "" (Toate) | "da" | "nu"
+          afiseazaTotal: false,
+        };
+      }
+
+      // Scopul de magazine vizibile rolului curent:
+      //   { all: true }               -> admin/superadmin, fără restricție
+      //   { all: false, ids: [...] }  -> magazin (propriul id), agent/hub
+      //                                  (magazinele alocate)
+      async function scopStatisticiRol() {
+        if (
+          currentProfile.role === "admin" ||
+          currentProfile.role === "superadmin"
+        ) {
+          return { all: true, ids: [] };
+        }
+        if (currentProfile.role === "magazin") {
+          return { all: false, ids: [currentUser.id] };
+        }
+        if (currentProfile.role === "agent") {
+          const { data } = await supa
+            .from("agent_magazine")
+            .select("*")
+            .eq("agent_id", currentUser.id);
+          return { all: false, ids: (data || []).map((a) => a.magazin_id) };
+        }
+        if (currentProfile.role === "magazin_hub") {
+          const { data } = await supa
+            .from("hub_magazine")
+            .select("*")
+            .eq("hub_id", currentUser.id);
+          return { all: false, ids: (data || []).map((a) => a.magazin_id) };
+        }
+        return { all: false, ids: [] };
+      }
+
+      // Presetări rapide de interval (format YYYY-MM-DD), relativ la data
+      // curentă — luni este considerat prima zi a săptămânii.
+      function presetariPerioadaStatistici() {
+        const azi = new Date();
+        const iso = (d) => d.toISOString().slice(0, 10);
+        const inceputSaptamana = new Date(azi);
+        const ziuaSaptamanii = (azi.getDay() + 6) % 7;
+        inceputSaptamana.setDate(azi.getDate() - ziuaSaptamanii);
+        const inceputLuna = new Date(azi.getFullYear(), azi.getMonth(), 1);
+        const inceputLunaTrecuta = new Date(
+          azi.getFullYear(),
+          azi.getMonth() - 1,
+          1,
+        );
+        const sfarsitLunaTrecuta = new Date(
+          azi.getFullYear(),
+          azi.getMonth(),
+          0,
+        );
+        const inceputSemestru = new Date(
+          azi.getFullYear(),
+          azi.getMonth() < 6 ? 0 : 6,
+          1,
+        );
+        const inceputAn = new Date(azi.getFullYear(), 0, 1);
+        return [
+          {
+            key: "saptamana",
+            label: "Săptămâna curentă",
+            start: iso(inceputSaptamana),
+            end: iso(azi),
+          },
+          {
+            key: "luna",
+            label: "Luna curentă",
+            start: iso(inceputLuna),
+            end: iso(azi),
+          },
+          {
+            key: "luna_trecuta",
+            label: "Luna trecută",
+            start: iso(inceputLunaTrecuta),
+            end: iso(sfarsitLunaTrecuta),
+          },
+          {
+            key: "semestru",
+            label: "Semestrul curent",
+            start: iso(inceputSemestru),
+            end: iso(azi),
+          },
+          {
+            key: "an",
+            label: "Anul curent",
+            start: iso(inceputAn),
+            end: iso(azi),
+          },
+        ];
+      }
+
+      function magazinLabelDin(magazine, id) {
+        if (!id) return "—";
+        const m = (magazine || []).find((x) => x.id === id);
+        return m
+          ? `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`
+          : "—";
+      }
+
+      // Coloanele complete pentru raportul de PRODUSE, condiționate de rol
+      // ("Preț intrare" și "Adaos" doar admin/superadmin — aceeași regulă
+      // deja aplicată în "Stocul meu" / "Depozit central").
+      function coloaneStatisticiProduse(esteAdmin) {
+        const coloane = [
+          { key: "id_produs", label: "ID produs" },
+          { key: "agent", label: "Agent" },
+          { key: "magazin", label: "Magazin" },
+          { key: "categorie", label: "Categorie" },
+          { key: "marca", label: "Marcă" },
+          { key: "culoare", label: "Culoare" },
+          { key: "vin", label: "VIN" },
+          { key: "data_comenzii", label: "Data alocării" },
+        ];
+        if (esteAdmin) {
+          coloane.push(
+            { key: "pret_intrare", label: "Preț intrare" },
+            { key: "adaos", label: "Adaos" },
+          );
+        }
+        coloane.push(
+          { key: "pret_vanzare", label: "Preț vânzare" },
+          { key: "alte_costuri", label: "Alte costuri" },
+          { key: "total_fara_tva", label: "Total fără TVA" },
+          { key: "pret_cu_tva", label: "Preț cu TVA" },
+          { key: "telefon", label: "Telefon" },
+          { key: "adresa_facturare", label: "Adresă facturare" },
+          { key: "vandut_label", label: "Vândut" },
+          { key: "data_vanzare", label: "Data vânzării" },
+          { key: "client_nume", label: "Client" },
+          { key: "client_telefon", label: "Telefon client" },
+          { key: "client_email", label: "Email client" },
+          { key: "client_adresa", label: "Adresă client" },
+          { key: "garantie_label", label: "Garanție extinsă" },
+        );
+        return coloane;
+      }
+
+      function randValoareProdus(p, magazine, key) {
+        switch (key) {
+          case "magazin":
+            return p.vanzare_directa
+              ? "Vânzare directă"
+              : magazinLabelDin(magazine, p.magazin_id);
+          case "data_comenzii":
+            return p.data_comenzii
+              ? new Date(p.data_comenzii).toLocaleDateString("ro-RO")
+              : "—";
+          case "data_vanzare":
+            return p.data_vanzare
+              ? new Date(p.data_vanzare).toLocaleDateString("ro-RO")
+              : "—";
+          case "vandut_label":
+            return p.vandut ? "Da" : "Nu";
+          case "garantie_label":
+            return p.garantie_extinsa ? "Da" : "Nu";
+          case "pret_intrare":
+          case "pret_vanzare":
+          case "adaos":
+          case "alte_costuri":
+          case "total_fara_tva":
+          case "pret_cu_tva":
+            return p[key] !== null && p[key] !== undefined
+              ? fmtNum(p[key])
+              : "—";
+          default:
+            return p[key] || "—";
+        }
+      }
+
+      // Rândul de "Total" pentru raportul de produse — se însumează doar
+      // coloanele cu sume de preț, exact cele la care rolul curent are
+      // acces (coloane deja filtrate în `coloane`, primite din
+      // coloaneStatisticiProduse(esteAdmin)); restul coloanelor rămân goale,
+      // cu eticheta "TOTAL" pe prima coloană.
+      const COLOANE_PRET_PRODUSE = [
+        "pret_intrare",
+        "adaos",
+        "pret_vanzare",
+        "alte_costuri",
+        "total_fara_tva",
+        "pret_cu_tva",
+      ];
+      function calculeazaRandTotalProduse(coloane, randuri) {
+        const randTotal = {};
+        coloane.forEach((c, idx) => {
+          if (COLOANE_PRET_PRODUSE.includes(c.key)) {
+            const suma = randuri.reduce(
+              (s, r) => s + (Number(r[c.key]) || 0),
+              0,
+            );
+            randTotal[c.key] = fmtNum(suma);
+          } else {
+            randTotal[c.key] = idx === 0 ? "TOTAL" : "";
+          }
+        });
+        return randTotal;
+      }
+
+      function coloaneStatisticiComenzi() {
+        return [
+          { key: "numar_comanda", label: "Nr. comandă" },
+          { key: "magazin", label: "Magazin" },
+          { key: "agent", label: "Agent" },
+          { key: "status_label", label: "Status" },
+          { key: "created_at_label", label: "Data creării" },
+          { key: "nr_produse", label: "Nr. produse" },
+          { key: "observatii", label: "Observații" },
+        ];
+      }
+
+      function randValoareComanda(c, magazine, liniiPerComanda, key) {
+        switch (key) {
+          case "magazin":
+            return c.vanzare_directa
+              ? "Vânzare directă"
+              : magazinLabelDin(magazine, c.magazin_id);
+          case "status_label":
+            return STATUS_COMANDA_LABEL[c.status] || c.status || "—";
+          case "created_at_label":
+            return c.created_at
+              ? new Date(c.created_at).toLocaleDateString("ro-RO")
+              : "—";
+          case "nr_produse":
+            return String((liniiPerComanda.get(c.id) || []).length);
+          default:
+            return c[key] || "—";
+        }
+      }
+
+      // Construiește un tabel HTML generic, read-only, dintr-un set de
+      // coloane { key, label } și o funcție care extrage valoarea afișată
+      // pentru fiecare (rând, coloană).
+      function tabelStatisticiHtml(coloane, randuri, getValoare, randTotal) {
+        if (!randuri.length) {
+          return `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun rezultat pentru filtrele selectate.</p></div>`;
+        }
+        return `
+    <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
+      <table class="w-full text-sm min-w-[1400px]">
+        <thead>
+          <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
+            <th class="px-3 py-3 font-medium">Nr.</th>
+            ${coloane.map((c) => `<th class="px-3 py-3 font-medium whitespace-nowrap">${esc(c.label)}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${randuri
+            .map(
+              (r, i) => `
+          <tr class="border-b last:border-0" style="border-color:var(--line)">
+            <td class="px-3 py-3 text-slate-400">${i + 1}</td>
+            ${coloane
+              .map(
+                (c) =>
+                  `<td class="px-3 py-3 text-xs whitespace-nowrap">${esc(getValoare(r, c.key))}</td>`,
+              )
+              .join("")}
+          </tr>`,
+            )
+            .join("")}
+          ${
+            randTotal
+              ? `
+          <tr class="border-t-2 font-bold bg-slate-50" style="border-color:var(--line-strong)">
+            <td class="px-3 py-3"></td>
+            ${coloane
+              .map(
+                (c) =>
+                  `<td class="px-3 py-3 text-xs whitespace-nowrap">${esc(randTotal[c.key] || "")}</td>`,
+              )
+              .join("")}
+          </tr>`
+              : ""
+          }
+        </tbody>
+      </table>
+    </div>`;
+      }
+
+      // Construiește și descarcă un fișier Excel (ExcelJS) cu exact
+      // coloanele + rândurile afișate curent în raport (+ rândul de Total,
+      // dacă e furnizat), plus o coloană "Nr. crt." (doar pe rândurile de
+      // date, nu pe header sau pe rândul de Total), borduri pe toate
+      // celulele completate, text centrat, bold pe header/Total, și
+      // lățime de coloană ajustată automat la conținut.
+      async function exportStatisticiExcel(
+        meta,
+        coloane,
+        randuri,
+        getValoare,
+        randTotal,
+      ) {
+        const antete = ["Nr. crt.", ...coloane.map((c) => c.label)];
+        const randuriDate = randuri.map((r, i) => [
+          i + 1,
+          ...coloane.map((c) => getValoare(r, c.key)),
+        ]);
+        const randTotalValori = randTotal
+          ? ["", ...coloane.map((c) => randTotal[c.key] || "")]
+          : null;
+
+        const wb = new ExcelJS.Workbook();
+        const ws = wb.addWorksheet(meta.tipLabel.slice(0, 31));
+
+        // Lățime de coloană ajustată la cel mai lung conținut din coloană.
+        const toateRandurile = [
+          antete,
+          ...randuriDate,
+          ...(randTotalValori ? [randTotalValori] : []),
+        ];
+        ws.columns = antete.map((_, idx) => {
+          let maxLen = 8;
+          toateRandurile.forEach((r) => {
+            const len =
+              r[idx] === null || r[idx] === undefined
+                ? 0
+                : String(r[idx]).length;
+            if (len > maxLen) maxLen = len;
+          });
+          return { width: Math.min(maxLen + 2, 45) };
+        });
+
+        const bordurConturCelule = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+        function stilizeazaRand(row, bold) {
+          row.eachCell({ includeEmpty: true }, (cell) => {
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+            cell.border = bordurConturCelule;
+            if (bold) cell.font = { bold: true };
+          });
+        }
+
+        stilizeazaRand(ws.addRow(antete), true);
+        randuriDate.forEach((r) => stilizeazaRand(ws.addRow(r), false));
+        if (randTotalValori) stilizeazaRand(ws.addRow(randTotalValori), true);
+
+        const buffer = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `Statistici_${meta.tipLabel}_${meta.start}_${meta.end}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      // Punct de intrare unic — folosit de toate rolurile.
+      async function renderStatisticiTab(container) {
+        container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const esteAdmin =
+          currentProfile.role === "admin" ||
+          currentProfile.role === "superadmin";
+        const scope = await scopStatisticiRol();
+        const { data: profiles } = await supa.from("profiles").select("*");
+        const toateMagazinele = (profiles || []).filter(
+          (p) => p.role === "magazin",
+        );
+        const magazineVizibile = scope.all
+          ? toateMagazinele
+          : toateMagazinele.filter((m) => scope.ids.includes(m.id));
+        const agentiExistenti = (profiles || [])
+          .filter((p) => p.role === "agent")
+          .map((p) => p.nume || p.email)
+          .filter(Boolean);
+        const marciExistente = distinctMarci(
+          (await supa.from("produse").select("marca")).data || [],
+        );
+
+        if (!statisticiState) statisticiState = statisticiStateImplicit();
+        const state = statisticiState;
+        const presets = presetariPerioadaStatistici();
+
+        const areFiltruMagazin = magazineVizibile.length > 0 || esteAdmin;
+        const magazineFiltruList = esteAdmin
+          ? [
+              {
+                id: "vanzare_directa",
+                nume: "Vânzări directe",
+                filiala: "",
+                email: "",
+              },
+              ...magazineVizibile,
+            ]
+          : magazineVizibile;
+
+        container.innerHTML = `
+    <div class="space-y-4">
+      <div class="bg-white rounded-xl border p-4 space-y-3" style="border-color:var(--line)">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span class="text-xs font-semibold text-slate-500 mr-1">Date:</span>
+          <button type="button" data-tip="produse" class="stat-tip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.tip === "produse" ? "btn-primary" : ""}" style="border-color:var(--line)">Produse</button>
+          <button type="button" data-tip="comenzi" class="stat-tip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.tip === "comenzi" ? "btn-primary" : ""}" style="border-color:var(--line)">Comenzi</button>
+        </div>
+        <div id="stat-subtip-wrap" class="flex flex-wrap items-center gap-1.5 ${state.tip === "produse" ? "" : "hidden"}">
+          <span class="text-xs font-semibold text-slate-500 mr-1">Subset${esteAdmin ? " (poți combina mai multe)" : ""}:</span>
+          <button type="button" data-subtip="toate" class="stat-subtip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.subTipuri.includes("toate") ? "btn-primary" : ""}" style="border-color:var(--line)">Toate</button>
+          ${
+            esteAdmin
+              ? `<button type="button" data-subtip="stoc_central" class="stat-subtip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.subTipuri.includes("stoc_central") ? "btn-primary" : ""}" style="border-color:var(--line)">Stoc central</button>`
+              : ""
+          }
+          <button type="button" data-subtip="stoc_magazine" class="stat-subtip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.subTipuri.includes("stoc_magazine") ? "btn-primary" : ""}" style="border-color:var(--line)">În stoc magazine</button>
+          <button type="button" data-subtip="vandute" class="stat-subtip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.subTipuri.includes("vandute") ? "btn-primary" : ""}" style="border-color:var(--line)">Vândute</button>
+        </div>
+        <div class="flex flex-wrap items-end gap-3">
+          <div>
+            ${fieldLabel("Perioadă")}
+            <select id="stat-perioada" class="${inputBase()}">
+              <option value="" ${state.perioada === "" ? "selected" : ""}>Perioada selectată</option>
+              ${presets
+                .map(
+                  (p) =>
+                    `<option value="${p.key}" ${state.perioada === p.key ? "selected" : ""}>${esc(p.label)}</option>`,
+                )
+                .join("")}
+            </select>
+          </div>
+          <div>${fieldLabel("De la")}<input type="date" id="stat-start" value="${state.start}" class="${inputBase()}"></div>
+          <div>${fieldLabel("Până la")}<input type="date" id="stat-end" value="${state.end}" class="${inputBase()}"></div>
+          ${
+            areFiltruMagazin
+              ? `<div>${fieldLabel("Magazin")}
+              <div class="relative">
+                <input type="text" id="stat-magazin-input" class="${inputBase()}" placeholder="Toate" autocomplete="off" value="${esc(magazinLabelDin(magazineFiltruList, state.magazinId) === "—" ? "" : magazinLabelDin(magazineFiltruList, state.magazinId))}">
+                <input type="hidden" id="stat-magazin-id" value="${esc(state.magazinId)}">
+                <div id="stat-magazin-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+              </div>
+            </div>`
+              : ""
+          }
+          <div>${fieldLabel("Agent")}
+            <div class="relative">
+              <input type="text" id="stat-agent-input" class="${inputBase()}" placeholder="Toți" autocomplete="off" value="${esc(state.agentNume)}">
+              <div id="stat-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+            </div>
+          </div>
+          <div id="stat-categorie-wrap" class="${state.tip === "produse" ? "" : "hidden"}">
+            ${fieldLabel("Categorie")}
+            <select id="stat-categorie" class="${inputBase()}">
+              <option value="">Toate</option>
+              ${CATEGORII_PRODUS.map(
+                (c) =>
+                  `<option value="${esc(c)}" ${state.categorie === c ? "selected" : ""}>${esc(c)}</option>`,
+              ).join("")}
+            </select>
+          </div>
+          <div id="stat-marca-wrap" class="${state.tip === "produse" ? "" : "hidden"}">
+            ${fieldLabel("Marcă")}
+            <div class="relative">
+              <input type="text" id="stat-marca-input" class="${inputBase()}" placeholder="Toate" autocomplete="off" value="${esc(state.marca)}">
+              <div id="stat-marca-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+            </div>
+          </div>
+          <div id="stat-culoare-wrap" class="${state.tip === "produse" ? "" : "hidden"}">
+            ${fieldLabel("Culoare")}
+            <div class="relative">
+              <input type="text" id="stat-culoare-input" class="${inputBase()}" placeholder="Toate" autocomplete="off" value="${esc(state.culoare)}">
+              <div id="stat-culoare-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+            </div>
+          </div>
+          <div id="stat-garantie-wrap" class="${state.tip === "produse" ? "" : "hidden"}">
+            ${fieldLabel("Garanție ext.")}
+            <select id="stat-garantie" class="${inputBase()}">
+              <option value="" ${state.garantieExtinsa === "" ? "selected" : ""}>Toate</option>
+              <option value="da" ${state.garantieExtinsa === "da" ? "selected" : ""}>Da</option>
+              <option value="nu" ${state.garantieExtinsa === "nu" ? "selected" : ""}>Nu</option>
+            </select>
+          </div>
+          <div id="stat-total-wrap" class="flex items-end gap-1.5 ${state.tip === "produse" ? "" : "hidden"}">
+            <div>
+              <span class="block text-xs font-medium text-slate-600 mb-1">Linie Total</span>
+              <div class="flex gap-1.5">
+                <button type="button" data-total="nu" class="stat-total-btn rounded-lg px-3 py-2 text-xs font-medium border ${!state.afiseazaTotal ? "btn-primary" : ""}" style="border-color:var(--line)">Nu</button>
+                <button type="button" data-total="da" class="stat-total-btn rounded-lg px-3 py-2 text-xs font-medium border ${state.afiseazaTotal ? "btn-primary" : ""}" style="border-color:var(--line)">Da</button>
+              </div>
+            </div>
+          </div>
+          <button id="stat-aplica" class="btn-primary rounded-lg px-4 py-2 text-sm">Aplică filtre</button>
+          <button id="stat-reset" class="rounded-lg px-4 py-2 text-sm font-medium border" style="border-color:var(--line)">✕ Elimină filtrele</button>
+          <button id="stat-export" class="rounded-lg px-4 py-2 text-sm font-medium border ml-auto" style="border-color:var(--line)">⬇ Exportă Excel</button>
+        </div>
+      </div>
+      <div id="stat-results"></div>
+    </div>`;
+
+        // -------- autocomplete-uri (aceleași componente ca la produse) -----
+        if (areFiltruMagazin) {
+          attachMagazinAutocomplete(
+            document.getElementById("stat-magazin-input"),
+            document.getElementById("stat-magazin-suggestions"),
+            document.getElementById("stat-magazin-id"),
+            magazineFiltruList,
+            () => {},
+          );
+        }
+        attachAgentAutocomplete(
+          document.getElementById("stat-agent-input"),
+          document.getElementById("stat-agent-suggestions"),
+          agentiExistenti,
+        );
+        if (state.tip === "produse") {
+          attachAgentAutocomplete(
+            document.getElementById("stat-marca-input"),
+            document.getElementById("stat-marca-suggestions"),
+            marciExistente,
+          );
+          const culoriExistente = Array.from(
+            new Set(
+              ((await supa.from("produse").select("culoare")).data || [])
+                .map((p) => p.culoare)
+                .filter(Boolean),
+            ),
+          );
+          attachAgentAutocomplete(
+            document.getElementById("stat-culoare-input"),
+            document.getElementById("stat-culoare-suggestions"),
+            culoriExistente,
+          );
+        }
+
+        // -------- comutare Tip / Subtip (doar UI, fără refetch automat) ---
+        container.querySelectorAll(".stat-tip-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            state.tip = btn.dataset.tip;
+            renderStatisticiTab(container);
+          });
+        });
+        container.querySelectorAll(".stat-subtip-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const clicked = btn.dataset.subtip;
+            if (clicked === "toate") {
+              state.subTipuri = ["toate"];
+            } else {
+              let set = state.subTipuri.filter((s) => s !== "toate");
+              if (set.includes(clicked)) {
+                set = set.filter((s) => s !== clicked);
+              } else {
+                set.push(clicked);
+              }
+              state.subTipuri = set.length ? set : ["toate"];
+            }
+            renderStatisticiTab(container);
+          });
+        });
+        container.querySelectorAll(".stat-total-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            state.afiseazaTotal = btn.dataset.total === "da";
+            renderStatisticiTab(container);
+          });
+        });
+
+        // -------- presetare perioadă din dropdown ---------------------
+        document
+          .getElementById("stat-perioada")
+          .addEventListener("change", (e) => {
+            const val = e.target.value;
+            state.perioada = val;
+            if (val) {
+              const p = presets.find((x) => x.key === val);
+              if (p) {
+                state.start = p.start;
+                state.end = p.end;
+                document.getElementById("stat-start").value = p.start;
+                document.getElementById("stat-end").value = p.end;
+              }
+            }
+          });
+        document
+          .getElementById("stat-start")
+          .addEventListener("change", (e) => {
+            state.start = e.target.value;
+            state.perioada = "";
+            document.getElementById("stat-perioada").value = "";
+          });
+        document.getElementById("stat-end").addEventListener("change", (e) => {
+          state.end = e.target.value;
+          state.perioada = "";
+          document.getElementById("stat-perioada").value = "";
+        });
+
+        const resultsEl = document.getElementById("stat-results");
+        let ultimulRaport = null; // { meta, coloane, randuri, getValoare }
+
+        async function incarcaSiAfiseaza() {
+          resultsEl.innerHTML = `<div class="text-sm text-slate-400">Se calculează...</div>`;
+
+          let idsEfective = scope.all ? null : scope.ids.slice();
+          const filtruVanzareDirecta = state.magazinId === "vanzare_directa";
+          if (filtruVanzareDirecta) {
+            idsEfective = null;
+          } else if (state.magazinId) {
+            idsEfective = [state.magazinId];
+          }
+
+          const termen = tabSearchTerms[currentTabKey] || "";
+
+          if (state.tip === "comenzi") {
+            let q = supa.from("comenzi").select("*");
+            if (idsEfective) q = q.in("magazin_id", idsEfective);
+            if (filtruVanzareDirecta) q = q.eq("vanzare_directa", true);
+            if (currentProfile.role === "agent")
+              q = q.eq("creat_de", currentUser.id);
+            q = q
+              .gte("created_at", state.start + "T00:00:00")
+              .lte("created_at", state.end + "T23:59:59");
+            if (state.agentNume) q = q.ilike("agent", `%${state.agentNume}%`);
+            const orFilter = buildSearchOrFilter(termen, [
+              "numar_comanda",
+              "agent",
+              "observatii",
+            ]);
+            if (orFilter) q = q.or(orFilter);
+            q = q.order("created_at", { ascending: false });
+
+            const { data: comenzi, error } = await q;
+            if (error) {
+              resultsEl.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(error.message)}</div>`;
+              return;
+            }
+            const comenziIds = (comenzi || []).map((c) => c.id);
+            const { data: linii } = comenziIds.length
+              ? await supa
+                  .from("comanda_produse")
+                  .select("*")
+                  .in("comanda_id", comenziIds)
+              : { data: [] };
+            const liniiPerComanda = new Map();
+            (linii || []).forEach((l) => {
+              if (!liniiPerComanda.has(l.comanda_id))
+                liniiPerComanda.set(l.comanda_id, []);
+              liniiPerComanda.get(l.comanda_id).push(l);
+            });
+
+            const coloane = coloaneStatisticiComenzi();
+            const getValoare = (c, key) =>
+              randValoareComanda(c, toateMagazinele, liniiPerComanda, key);
+            resultsEl.innerHTML = `
+      <p class="text-sm text-slate-500 mb-2">${(comenzi || []).length} comand${(comenzi || []).length === 1 ? "ă" : "ă"} găsit${(comenzi || []).length === 1 ? "ă" : "e"} pentru filtrele selectate</p>
+      ${tabelStatisticiHtml(coloane, comenzi || [], getValoare)}`;
+
+            ultimulRaport = {
+              meta: {
+                tipLabel: "Comenzi",
+                start: state.start,
+                end: state.end,
+                scopLabel: state.magazinId
+                  ? magazinLabelDin(magazineFiltruList, state.magazinId)
+                  : scope.all
+                    ? "Toate magazinele"
+                    : "Magazinele mele",
+              },
+              coloane,
+              randuri: comenzi || [],
+              getValoare,
+            };
+            return;
+          }
+
+          // ---- tip === "produse" ----
+          const coloaneCautare = [
+            "id_produs",
+            "agent",
+            "categorie",
+            "marca",
+            "culoare",
+            "vin",
+            "client_nume",
+            "client_telefon",
+            "client_email",
+          ];
+          const orFilter = buildSearchOrFilter(termen, coloaneCautare);
+
+          // Construiește interogarea pentru UN singur subset — filtrele
+          // comune (categorie/marcă/culoare/agent/căutare) se aplică la fel
+          // indiferent de subset.
+          function construiesteQuerySubset(subset) {
+            let qs = supa.from("produse").select("*");
+            if (subset === "stoc_central") {
+              qs = qs.is("magazin_id", null).eq("vandut", false);
+              qs = qs
+                .gte("created_at", state.start + "T00:00:00")
+                .lte("created_at", state.end + "T23:59:59");
+            } else if (subset === "stoc_magazine") {
+              qs = idsEfective
+                ? qs.in("magazin_id", idsEfective)
+                : qs.not("magazin_id", "is", null);
+              qs = qs.eq("vandut", false);
+              qs = qs
+                .gte("data_comenzii", state.start)
+                .lte("data_comenzii", state.end);
+            } else if (subset === "vandute") {
+              if (idsEfective) qs = qs.in("magazin_id", idsEfective);
+              qs = qs.eq("vandut", true);
+              qs = qs
+                .gte("data_vanzare", state.start)
+                .lte("data_vanzare", state.end);
+            } else {
+              // toate
+              if (idsEfective) qs = qs.in("magazin_id", idsEfective);
+              qs = qs
+                .gte("created_at", state.start + "T00:00:00")
+                .lte("created_at", state.end + "T23:59:59");
+            }
+            if (state.categorie) qs = qs.eq("categorie", state.categorie);
+            if (state.marca) qs = qs.ilike("marca", `%${state.marca}%`);
+            if (state.culoare) qs = qs.ilike("culoare", `%${state.culoare}%`);
+            if (state.agentNume) qs = qs.ilike("agent", `%${state.agentNume}%`);
+            if (state.garantieExtinsa === "da")
+              qs = qs.eq("garantie_extinsa", true);
+            else if (state.garantieExtinsa === "nu")
+              qs = qs.eq("garantie_extinsa", false);
+            if (filtruVanzareDirecta) qs = qs.eq("vanzare_directa", true);
+            if (orFilter) qs = qs.or(orFilter);
+            return qs;
+          }
+
+          // "toate" e mereu exclusiv; altfel se pot combina mai multe
+          // subseturi (ex: stoc central + vândute) — se rulează câte o
+          // interogare per subset ales și se reunesc rezultatele.
+          const subseturiActive = state.subTipuri.includes("toate")
+            ? ["toate"]
+            : state.subTipuri;
+
+          const rezultateSubset = await Promise.all(
+            subseturiActive.map((s) => construiesteQuerySubset(s)),
+          );
+          const eroareProduse = rezultateSubset.find((r) => r.error)?.error;
+          if (eroareProduse) {
+            resultsEl.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(eroareProduse.message)}</div>`;
+            return;
+          }
+          const produseIdVazute = new Set();
+          let produse = [];
+          rezultateSubset.forEach((r) => {
+            (r.data || []).forEach((p) => {
+              if (produseIdVazute.has(p.id)) return;
+              produseIdVazute.add(p.id);
+              produse.push(p);
+            });
+          });
+          produse.sort((a, b) =>
+            (b.created_at || "").localeCompare(a.created_at || ""),
+          );
+
+          const coloane = coloaneStatisticiProduse(esteAdmin);
+          const getValoare = (p, key) =>
+            randValoareProdus(p, toateMagazinele, key);
+          const randTotal =
+            state.afiseazaTotal && (produse || []).length
+              ? calculeazaRandTotalProduse(coloane, produse || [])
+              : null;
+          resultsEl.innerHTML = `
+      <p class="text-sm text-slate-500 mb-2">${(produse || []).length} produs${(produse || []).length === 1 ? "" : "e"} găsit${(produse || []).length === 1 ? "" : "e"} pentru filtrele selectate</p>
+      ${tabelStatisticiHtml(coloane, produse || [], getValoare, randTotal)}`;
+
+          ultimulRaport = {
+            meta: {
+              tipLabel: "Produse",
+              start: state.start,
+              end: state.end,
+              scopLabel: state.magazinId
+                ? magazinLabelDin(magazineFiltruList, state.magazinId)
+                : scope.all
+                  ? "Toate magazinele"
+                  : "Magazinele mele",
+            },
+            coloane,
+            randuri: produse || [],
+            getValoare,
+            randTotal,
+          };
+        }
+
+        document.getElementById("stat-aplica").addEventListener("click", () => {
+          const magInput = document.getElementById("stat-magazin-id");
+          if (magInput) state.magazinId = magInput.value;
+          state.agentNume = document
+            .getElementById("stat-agent-input")
+            .value.trim();
+          const catSel = document.getElementById("stat-categorie");
+          if (catSel) state.categorie = catSel.value;
+          const marcaInput = document.getElementById("stat-marca-input");
+          if (marcaInput) state.marca = marcaInput.value.trim();
+          const culoareInput = document.getElementById("stat-culoare-input");
+          if (culoareInput) state.culoare = culoareInput.value.trim();
+          const garantieSel = document.getElementById("stat-garantie");
+          if (garantieSel) state.garantieExtinsa = garantieSel.value;
+          incarcaSiAfiseaza();
+        });
+        document.getElementById("stat-reset").addEventListener("click", () => {
+          statisticiState = statisticiStateImplicit();
+          renderStatisticiTab(container);
+        });
+        document
+          .getElementById("stat-export")
+          .addEventListener("click", async () => {
+            if (!ultimulRaport) {
+              toast(
+                "Aplică mai întâi filtrele pentru a genera un raport.",
+                true,
+              );
+              return;
+            }
+            await exportStatisticiExcel(
+              ultimulRaport.meta,
+              ultimulRaport.coloane,
+              ultimulRaport.randuri,
+              ultimulRaport.getValoare,
+              ultimulRaport.randTotal,
+            );
+          });
+
+        await incarcaSiAfiseaza();
       }
     </script>
   </body>
