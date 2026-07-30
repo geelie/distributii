@@ -4,7 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Geeli Distribution</title>
-    <link rel="icon" type="image/png" href="https://i.ibb.co/Lq8VVBn/20260727-204249.png" />
+    <link
+      rel="icon"
+      type="image/png"
+      href="https://i.ibb.co/Lq8VVBn/20260727-204249.png"
+    />
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -135,6 +139,40 @@
       .adresa-clamp.adresa-expanded {
         -webkit-line-clamp: unset;
         overflow: visible;
+      }
+
+      /* Container fix pentru tabelele de produse/comenzi din meniuri:
+         header blocat (sticky) pe verticală, prima coloană (Nr.) blocată
+         pe orizontală, iar containerul nu depășește marginea de jos a
+         ecranului — restul paginii (titluri, filtre, butoane) rămâne fix. */
+      .tabel-fix-wrap {
+        overflow: auto;
+        max-height: calc(100vh - 250px);
+        position: relative;
+      }
+      .tabel-fix-wrap.tabel-fix-wrap-nested {
+        max-height: 340px;
+      }
+      .tabel-fix-wrap table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        background: #fff;
+      }
+      .tabel-fix-wrap table th:first-child,
+      .tabel-fix-wrap table td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background: #fff;
+      }
+      .tabel-fix-wrap table thead th:first-child {
+        z-index: 4;
+      }
+      @media (max-width: 767px) {
+        .tabel-fix-wrap {
+          max-height: calc(100vh - 300px);
+        }
       }
     </style>
   </head>
@@ -967,7 +1005,7 @@
         const viewerIsSuperadmin = currentProfile.role === "superadmin";
 
         container.innerHTML = `
-    <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
+    <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
       <table class="w-full text-sm min-w-[980px]">
         <thead>
           <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
@@ -1110,6 +1148,13 @@
       // ==================================================================
       // DEPOZIT CENTRAL (admin / superadmin) — stoc produse (vehicule electrice)
       // ==================================================================
+      //
+      // Migrare SQL necesară (o singură dată, în Supabase SQL editor) pentru
+      // câmpurile noi "Preț Recomandat" și "Discount" adăugate produsului:
+      //
+      //   alter table produse add column if not exists pret_recomandat numeric;
+      //   alter table produse add column if not exists discount numeric default 0;
+      //
       const CATEGORII_PRODUS = [
         "Bicicletă electrică",
         "Tricicletă electrică",
@@ -1341,6 +1386,7 @@
         alteInput,
         totalInput,
         tvaInput,
+        discountInput,
       }) {
         function updateTotalTva() {
           const vanzareStr = vanzareInput.value.trim();
@@ -1351,7 +1397,11 @@
           }
           const vanzare = parseFloat(vanzareStr) || 0;
           const alte = parseFloat(alteInput.value) || 0;
-          const total = vanzare + alte;
+          const discount = discountInput
+            ? parseFloat(discountInput.value) || 0
+            : 0;
+          const totalBrut = vanzare + alte;
+          const total = totalBrut * (1 - discount / 100);
           totalInput.value = fmtNum(total);
           tvaInput.value = fmtNum(total * (1 + TVA_RATE));
         }
@@ -1374,6 +1424,8 @@
           updateTotalTva();
         });
         alteInput.addEventListener("input", updateTotalTva);
+        if (discountInput)
+          discountInput.addEventListener("input", updateTotalTva);
         return { updateTotalTva };
       }
 
@@ -1429,7 +1481,7 @@
         produsComandaMap,
       ) {
         return `
-    <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
+    <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
       <table class="w-full text-sm min-w-[1700px]">
         <thead>
           <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
@@ -1447,6 +1499,7 @@
             <th class="px-3 py-3 font-medium">Alte costuri</th>
             <th class="px-3 py-3 font-medium">Total fără TVA</th>
             <th class="px-3 py-3 font-medium">Preț cu TVA</th>
+            <th class="px-3 py-3 font-medium">Preț Recomandat</th>
             <th class="px-3 py-3 font-medium">Magazin</th>
             <th class="px-3 py-3 font-medium">Telefon</th>
             <th class="px-3 py-3 font-medium">Adresă facturare</th>
@@ -1772,6 +1825,7 @@
     <td class="px-3 py-3"><input type="number" step="0.01" data-field="alte_costuri" value="${p.alte_costuri ?? ""}" class="price-input border rounded-md px-2 py-1.5 text-xs w-24"></td>
     <td class="px-3 py-3"><input type="number" step="0.01" data-field="total_fara_tva" value="${p.total_fara_tva ?? ""}" class="calc-input total-input border rounded-md px-2 py-1.5 text-xs w-24 font-medium"></td>
     <td class="px-3 py-3"><input type="number" step="0.01" data-field="pret_cu_tva" value="${p.pret_cu_tva ?? ""}" class="calc-input tva-input border rounded-md px-2 py-1.5 text-xs w-24 font-medium"></td>
+    <td class="px-3 py-3"><input type="number" step="0.01" data-field="pret_recomandat" value="${p.pret_recomandat ?? ""}" class="border rounded-md px-2 py-1.5 text-xs w-24"></td>
     <td class="px-3 py-3">
       <div class="relative">
         <input type="text" class="magazin-input border rounded-md px-2 py-1.5 text-xs w-28" placeholder="— (la vânzare)" autocomplete="off" value="${esc(currentMagazinLabel)}">
@@ -1912,6 +1966,12 @@
             const cuTva = tvaInput.value.trim()
               ? parseFloat(tvaInput.value)
               : null;
+            const pretRecomandatCell = row.querySelector(
+              '[data-field="pret_recomandat"]',
+            );
+            const pretRecomandat = pretRecomandatCell.value.trim()
+              ? parseFloat(pretRecomandatCell.value)
+              : null;
             const magazinId = magazinIdInput.value || null;
             const magazinInputVal = magazinInput.value.trim();
             const magazinProfil = magazine.find((m) => m.id === magazinId);
@@ -1946,6 +2006,7 @@
               alte_costuri: alte,
               total_fara_tva: total,
               pret_cu_tva: cuTva,
+              pret_recomandat: pretRecomandat,
               magazin_id: magazinId,
               telefon: esteRetragere
                 ? null
@@ -2082,7 +2143,10 @@
 
         overlay.innerHTML = `
     <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg fade-in my-auto">
-      <h2 class="text-lg font-bold mb-1">Adaugă produs nou</h2>
+      <div class="flex items-start justify-between mb-1">
+        <h2 class="text-lg font-bold">Adaugă produs nou</h2>
+        <button type="button" id="add-produs-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+      </div>
       <p class="text-sm text-slate-500 mb-5">Produsul va fi adăugat în stocul depozitului central.</p>
       <form id="form-add-produs" class="space-y-4">
         <div>
@@ -2130,7 +2194,8 @@
           <div>${fieldLabel("Total fără TVA")}<input type="number" step="0.01" id="add-total" class="${inputBase()} calc-field font-semibold"></div>
           <div>${fieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="add-tva" class="${inputBase()} calc-field font-semibold"></div>
         </div>
-        <p class="text-xs text-slate-400">Adaosul, totalul și prețul cu TVA se completează automat, dar pot fi editate manual la nevoie. Data comenzii, magazinul, telefonul și adresa de facturare se completează automat la vânzarea produsului.</p>
+        <div>${fieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="add-pret-recomandat" class="${inputBase()}"></div>
+        <p class="text-xs text-slate-400">Data comenzii, magazinul, telefonul și adresa de facturare se completează automat la vânzarea produsului.</p>
         <div class="flex gap-2 pt-1">
           <button type="button" id="add-produs-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
           <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Salvează produsul</button>
@@ -2142,6 +2207,9 @@
 
         document
           .getElementById("add-produs-cancel")
+          .addEventListener("click", () => overlay.remove());
+        document
+          .getElementById("add-produs-close")
           .addEventListener("click", () => overlay.remove());
         overlay.addEventListener("click", (e) => {
           if (e.target === overlay) overlay.remove();
@@ -2222,6 +2290,11 @@
               ? parseFloat(addTotal.value)
               : null;
             const cuTva = addTva.value.trim() ? parseFloat(addTva.value) : null;
+            const pretRecomandat = document
+              .getElementById("add-pret-recomandat")
+              .value.trim()
+              ? parseFloat(document.getElementById("add-pret-recomandat").value)
+              : null;
 
             btn.disabled = true;
             btn.textContent = "Se salvează...";
@@ -2243,6 +2316,7 @@
                 alte_costuri: alte,
                 total_fara_tva: total,
                 pret_cu_tva: cuTva,
+                pret_recomandat: pretRecomandat,
                 created_by: currentUser.id,
               })
               .select()
@@ -2283,7 +2357,10 @@
 
         overlay.innerHTML = `
     <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg fade-in my-auto">
-      <h2 class="text-lg font-bold mb-1">Editează produsul</h2>
+      <div class="flex items-start justify-between mb-1">
+        <h2 class="text-lg font-bold">Editează produsul</h2>
+        <button type="button" id="edit-produs-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+      </div>
       <p class="text-sm text-slate-500 mb-5">Modifică datele produsului din stocul depozitului central.</p>
       <form id="form-edit-produs" class="space-y-4">
         <div>
@@ -2331,7 +2408,15 @@
           <div>${fieldLabel("Total fără TVA")}<input type="number" step="0.01" id="edit-total" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.total_fara_tva)}"></div>
           <div>${fieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="edit-tva" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.pret_cu_tva)}"></div>
         </div>
-        <p class="text-xs text-slate-400">Adaosul, totalul și prețul cu TVA se completează automat, dar pot fi editate manual la nevoie.</p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>${fieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="edit-pret-recomandat" class="${inputBase()}" value="${p.pret_recomandat ?? ""}"></div>
+          <div>${fieldLabel("Discount")}
+            <div class="relative">
+              <input type="number" step="0.01" min="0" max="100" id="edit-discount" class="${inputBase()} pr-7" value="${p.discount ?? 0}">
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">%</span>
+            </div>
+          </div>
+        </div>
         <div class="flex gap-2 pt-1">
           <button type="button" id="edit-produs-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
           <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Salvează modificările</button>
@@ -2343,6 +2428,9 @@
 
         document
           .getElementById("edit-produs-cancel")
+          .addEventListener("click", () => overlay.remove());
+        document
+          .getElementById("edit-produs-close")
           .addEventListener("click", () => overlay.remove());
         overlay.addEventListener("click", (e) => {
           if (e.target === overlay) overlay.remove();
@@ -2386,6 +2474,7 @@
         const editAdaos = document.getElementById("edit-adaos");
         const editTotal = document.getElementById("edit-total");
         const editTva = document.getElementById("edit-tva");
+        const editDiscount = document.getElementById("edit-discount");
         attachPriceAutoCalc({
           intrareInput: editIntrare,
           vanzareInput: editVanzare,
@@ -2393,6 +2482,7 @@
           alteInput: editAlte,
           totalInput: editTotal,
           tvaInput: editTva,
+          discountInput: editDiscount,
         });
 
         document
@@ -2425,6 +2515,16 @@
             const cuTva = editTva.value.trim()
               ? parseFloat(editTva.value)
               : null;
+            const pretRecomandat = document
+              .getElementById("edit-pret-recomandat")
+              .value.trim()
+              ? parseFloat(
+                  document.getElementById("edit-pret-recomandat").value,
+                )
+              : null;
+            const discountVal = editDiscount.value.trim()
+              ? parseFloat(editDiscount.value)
+              : 0;
 
             btn.disabled = true;
             btn.textContent = "Se salvează...";
@@ -2445,6 +2545,8 @@
                 adaos,
                 total_fara_tva: total,
                 pret_cu_tva: cuTva,
+                pret_recomandat: pretRecomandat,
+                discount: discountVal,
                 updated_at: new Date().toISOString(),
               })
               .eq("id", p.id);
@@ -2483,6 +2585,70 @@
         };
         const cls = map[status] || "bg-slate-100 text-slate-500";
         return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium ${cls}">${esc(STATUS_COMANDA_LABEL[status] || status)}</span>`;
+      }
+
+      // ------------------------------------------------------------------
+      // Filtru pe status pentru tab-ul "Comenzi" (toate rolurile). Permite
+      // selectarea a până la două statusuri simultan; "Toate" resetează
+      // selecția. Starea se păstrează cât timp tab-ul rămâne deschis.
+      // ------------------------------------------------------------------
+      const COMANDA_FILTER_STATUSES = [
+        { key: "in_asteptare", label: "În așteptare" },
+        { key: "partial_onorata", label: "Parțial onorată" },
+        { key: "onorata", label: "Onorată" },
+      ];
+      let comenziStatusFilter = [];
+
+      function statusFilterChipsHtml(selected) {
+        const chip = (key, label, active) =>
+          `<button type="button" data-status-filter="${key}" class="status-filter-chip rounded-full px-3 py-1 text-xs font-medium border transition-colors ${active ? "bg-slate-800 text-white border-slate-800" : "border-slate-300 text-slate-600 hover:bg-slate-50"}">${esc(label)}</button>`;
+        return `
+    <div class="flex items-center gap-1.5 flex-wrap mb-3">
+      <span class="text-xs text-slate-400 mr-1">Filtru status:</span>
+      ${chip("__all__", "Toate", !selected.length)}
+      ${COMANDA_FILTER_STATUSES.map((s) => chip(s.key, s.label, selected.includes(s.key))).join("")}
+    </div>`;
+      }
+
+      function bindStatusFilterChips(container, onChange) {
+        container.querySelectorAll(".status-filter-chip").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const key = btn.dataset.statusFilter;
+            if (key === "__all__") {
+              comenziStatusFilter = [];
+              onChange();
+              return;
+            }
+            const next = comenziStatusFilter.slice();
+            const idx = next.indexOf(key);
+            if (idx >= 0) {
+              next.splice(idx, 1);
+            } else {
+              if (next.length >= 2) next.shift();
+              next.push(key);
+            }
+            comenziStatusFilter = next;
+            onChange();
+          });
+        });
+      }
+
+      // Statusul afișat/filtrabil al unei comenzi (ține cont de anulare).
+      function comandaStatusFiltrabil(c, lines) {
+        return c.status === "anulata" ? "anulata" : computeComandaStatus(lines);
+      }
+
+      // Aplică filtrul curent (comenziStatusFilter) pe o listă de comenzi,
+      // folosind liniile fiecăreia pentru a-i calcula statusul afișat.
+      function filtreazaComenziDupaStatus(comenzi, linii) {
+        if (!comenziStatusFilter.length) return comenzi;
+        return comenzi.filter((c) => {
+          const st = comandaStatusFiltrabil(
+            c,
+            linii.filter((l) => l.comanda_id === c.id),
+          );
+          return comenziStatusFilter.includes(st);
+        });
       }
 
       function lineStatusLabel(s) {
@@ -2598,8 +2764,14 @@
       }
 
       // Editor reutilizabil pentru liniile (produsele cerute) unei comenzi noi.
-      function renderComandaLinesEditor(containerEl, marci, marcaCategorieMap) {
+      function renderComandaLinesEditor(
+        containerEl,
+        marci,
+        marcaCategorieMap,
+        autoAddFirstRow,
+      ) {
         marcaCategorieMap = marcaCategorieMap || {};
+        if (autoAddFirstRow === undefined) autoAddFirstRow = true;
         let lineCount = 0;
         function addLineRow() {
           lineCount++;
@@ -2683,7 +2855,7 @@
           });
           return div;
         }
-        addLineRow();
+        if (autoAddFirstRow) addLineRow();
         return {
           addLineRow,
           fillLineFromProdus(div, p) {
@@ -2737,7 +2909,7 @@
         const overlay = document.createElement("div");
         overlay.id = "new-comanda-overlay";
         overlay.className =
-          "fixed inset-0 z-40 flex items-center justify-center px-4 py-8 overflow-y-auto";
+          "fixed inset-0 z-40 flex items-start justify-center px-4 py-8 overflow-auto";
         overlay.style.background = "rgba(15,20,25,0.55)";
 
         const magazineList =
@@ -2750,53 +2922,63 @@
           .join("");
 
         overlay.innerHTML = `
-    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl fade-in my-auto">
-      <h2 class="text-lg font-bold mb-1">Comandă nouă</h2>
-      <p class="text-sm text-slate-500 mb-5">Adaugă produsele cerute; Adminul le va pregăti din depozitul central.</p>
-      <form id="form-new-comanda" class="space-y-4">
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            ${fieldLabel("Magazin")}
-            <select id="comanda-magazin" class="${inputBase()}" required>
-              <option value="">Alege magazinul...</option>
-              ${mode === "admin" ? `<option value="${VANZARE_DIRECTA}">Vânzare directă</option>` : ""}
-              ${magazinOptionsHtml}
-            </select>
-          </div>
-          ${
-            mode === "admin"
-              ? `<div>
-            ${fieldLabel("Agent")}
-            <div class="relative">
-              <input type="text" id="comanda-agent" class="${inputBase()}" placeholder="Caută sau scrie numele agentului" autocomplete="off">
-              <div id="comanda-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+    <div class="flex gap-4 items-start justify-center my-auto">
+      <div id="comanda-nou-card" class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl fade-in relative shrink-0">
+        <button type="button" id="comanda-close-x" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-xl leading-none" title="Închide">✕</button>
+        <h2 class="text-lg font-bold mb-5 pr-6">Comandă nouă</h2>
+        <form id="form-new-comanda" class="space-y-4">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              ${fieldLabel("Magazin")}
+              <select id="comanda-magazin" class="${inputBase()}" required>
+                <option value="">Alege magazinul...</option>
+                ${mode === "admin" ? `<option value="${VANZARE_DIRECTA}">Vânzare directă</option>` : ""}
+                ${magazinOptionsHtml}
+              </select>
             </div>
-          </div>`
-              : ""
-          }
-        </div>
-        <div>
-          ${fieldLabel("Produse cerute")}
-          <div id="comanda-lines" class="space-y-2"></div>
-          <button type="button" id="comanda-add-line" class="mt-2 text-xs font-medium underline" style="color:var(--teal-dark)">+ Adaugă produs</button>
-        </div>
-        <div>${fieldLabel("Observații (opțional)")}<textarea id="comanda-observatii" rows="2" class="${inputBase()}"></textarea></div>
-        <div class="flex gap-2 pt-1">
-          <button type="button" id="comanda-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
-          <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Trimite comanda</button>
-        </div>
-        <p id="comanda-msg" class="text-sm text-center"></p>
-      </form>
-      <button type="button" id="comanda-vezi-stoc" class="mt-3 text-xs font-medium underline block" style="color:var(--teal-dark)">Vezi disponibilitate în stocul central</button>
-      <div id="comanda-stoc-central-wrap" class="hidden mt-2 border-t pt-3" style="border-color:var(--line)">
+            ${
+              mode === "admin"
+                ? `<div>
+              ${fieldLabel("Agent")}
+              <div class="relative">
+                <input type="text" id="comanda-agent" class="${inputBase()}" placeholder="Caută sau scrie numele agentului" autocomplete="off">
+                <div id="comanda-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+              </div>
+            </div>`
+                : ""
+            }
+          </div>
+          <div>
+            ${fieldLabel("Produse cerute")}
+            <div id="comanda-lines" class="space-y-2"></div>
+            <button type="button" id="comanda-add-line" class="mt-2 text-xs font-medium underline" style="color:var(--teal-dark)">+ Adaugă produs</button>
+          </div>
+          <div>${fieldLabel("Observații (opțional)")}<textarea id="comanda-observatii" rows="2" class="${inputBase()}"></textarea></div>
+          <div class="flex gap-2 pt-1">
+            <button type="button" id="comanda-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
+            <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Trimite comanda</button>
+          </div>
+          <p id="comanda-msg" class="text-sm text-center"></p>
+        </form>
+        <button type="button" id="comanda-vezi-stoc" class="mt-3 text-xs font-medium underline block" style="color:var(--teal-dark)">Vezi disponibilitate în stocul central</button>
+      </div>
+      <div id="comanda-stoc-central-wrap" class="hidden bg-white rounded-2xl shadow-xl p-4 w-full max-w-sm fade-in flex flex-col shrink-0">
+        <p class="text-sm font-semibold text-slate-700 mb-2">Disponibil în stocul central</p>
         <input type="text" id="comanda-stoc-central-search" class="${inputBase()} mb-2 text-xs" placeholder="Caută categorie, marcă, culoare...">
-        <div id="comanda-stoc-central-list" class="space-y-1 max-h-56 overflow-y-auto"></div>
+        <div class="grid grid-cols-2 gap-2 mb-2">
+          <input type="text" id="comanda-stoc-central-filtru-marca" class="${inputBase()} text-xs" placeholder="Filtrează după marcă">
+          <input type="text" id="comanda-stoc-central-filtru-culoare" class="${inputBase()} text-xs" placeholder="Filtrează după culoare">
+        </div>
+        <div id="comanda-stoc-central-list" class="space-y-1 overflow-y-auto flex-1 min-h-0"></div>
       </div>
     </div>`;
         document.body.appendChild(overlay);
 
         document
           .getElementById("comanda-cancel")
+          .addEventListener("click", () => overlay.remove());
+        document
+          .getElementById("comanda-close-x")
           .addEventListener("click", () => overlay.remove());
         overlay.addEventListener("click", (e) => {
           if (e.target === overlay) overlay.remove();
@@ -2815,6 +2997,7 @@
           linesContainer,
           context.marci,
           context.marcaCategorieMap,
+          false,
         );
         document
           .getElementById("comanda-add-line")
@@ -2831,21 +3014,32 @@
         const veziStocBtn = document.getElementById("comanda-vezi-stoc");
         const stocWrap = document.getElementById("comanda-stoc-central-wrap");
         const stocList = document.getElementById("comanda-stoc-central-list");
-        function paintStocCentral(filterQ) {
+        function paintStocCentral(filterQ, filtruMarca, filtruCuloare) {
           const q = (filterQ || "").trim().toLowerCase();
-          const filtered = !q
+          const fm = (filtruMarca || "").trim().toLowerCase();
+          const fc = (filtruCuloare || "").trim().toLowerCase();
+          let filtered = !q
             ? stocDisponibilComanda
             : stocDisponibilComanda.filter((p) =>
                 [p.categorie, p.marca, p.culoare]
                   .filter(Boolean)
                   .some((v) => v.toLowerCase().includes(q)),
               );
+          if (fm)
+            filtered = filtered.filter((p) =>
+              (p.marca || "").toLowerCase().includes(fm),
+            );
+          if (fc)
+            filtered = filtered.filter((p) =>
+              (p.culoare || "").toLowerCase().includes(fc),
+            );
           stocList.innerHTML = filtered.length
             ? filtered
                 .map(
                   (p) => `
-        <button type="button" data-stoc-produs="${p.id}" class="w-full text-left border rounded-md px-2.5 py-1.5 text-xs hover:bg-slate-50" style="border-color:var(--line)">
-          ${esc(p.categorie || "—")} · ${esc(p.marca || "—")} · ${esc(p.culoare || "—")}
+        <button type="button" data-stoc-produs="${p.id}" class="w-full text-left border rounded-md px-2.5 py-1.5 text-xs hover:bg-slate-50 flex items-center justify-between gap-2" style="border-color:var(--line)">
+          <span>${esc(p.categorie || "—")} · ${esc(p.marca || "—")} · ${esc(p.culoare || "—")}</span>
+          <span class="font-semibold whitespace-nowrap">${p.pret_cu_tva !== null && p.pret_cu_tva !== undefined ? fmtNum(p.pret_cu_tva) + " lei" : "—"}</span>
         </button>`,
                 )
                 .join("")
@@ -2861,14 +3055,35 @@
             });
           });
         }
+        function repaintStocCentral() {
+          paintStocCentral(
+            document.getElementById("comanda-stoc-central-search").value,
+            document.getElementById("comanda-stoc-central-filtru-marca").value,
+            document.getElementById("comanda-stoc-central-filtru-culoare")
+              .value,
+          );
+        }
         if (veziStocBtn) {
           veziStocBtn.addEventListener("click", () => {
-            stocWrap.classList.toggle("hidden");
-            if (!stocWrap.classList.contains("hidden")) paintStocCentral("");
+            const wasHidden = stocWrap.classList.contains("hidden");
+            if (wasHidden) {
+              const card = document.getElementById("comanda-nou-card");
+              stocWrap.style.maxHeight = card.offsetHeight + "px";
+              stocWrap.classList.remove("hidden");
+              repaintStocCentral();
+            } else {
+              stocWrap.classList.add("hidden");
+            }
           });
           document
             .getElementById("comanda-stoc-central-search")
-            .addEventListener("input", (e) => paintStocCentral(e.target.value));
+            .addEventListener("input", repaintStocCentral);
+          document
+            .getElementById("comanda-stoc-central-filtru-marca")
+            .addEventListener("input", repaintStocCentral);
+          document
+            .getElementById("comanda-stoc-central-filtru-culoare")
+            .addEventListener("input", repaintStocCentral);
         }
 
         document
@@ -3062,6 +3277,13 @@
         const produs = l.produs_id
           ? context.produse.find((p) => p.id === l.produs_id)
           : null;
+        // Doar Admin/Superadmin pot lega/crea produse reale din stoc;
+        // Agentul poate doar adăuga/șterge liniile cerute din comandă.
+        const canManageStock =
+          currentProfile.role === "admin" ||
+          currentProfile.role === "superadmin";
+        const canManageLines =
+          canManageStock || currentProfile.role === "agent";
         // Pentru o linie încă neasignată, dacă există deja un produs
         // potrivit pe stocul central, se afișează "Pe stoc" în loc de
         // "Neasignat" (produsul propriu-zis se leagă tot manual, din
@@ -3084,18 +3306,38 @@
     <div class="text-sm">
       <div class="font-medium">${esc(l.categorie || "—")}${l.marca ? " · " + esc(l.marca) : ""}${l.culoare ? " · " + esc(l.culoare) : ""}</div>
       <div class="text-xs text-slate-400">Cantitate: ${l.cantitate}</div>
-      ${produs ? `<div class="text-xs text-emerald-700 mt-1">Legat de produsul ${esc(produs.id_produs)}${produs.vin ? " · VIN " + esc(produs.vin) : ""}</div>` : ""}
+      ${
+        produs
+          ? `<div class="text-xs text-emerald-700 mt-1">Legat de produsul ${canManageStock ? `<button type="button" data-edit-produs-line="${l.id}" class="underline decoration-dotted hover:text-[var(--teal-dark)]" title="Deschide și editează datele produsului">${esc(produs.id_produs)}</button>` : esc(produs.id_produs)}${produs.vin ? " · VIN " + esc(produs.vin) : ""}</div>`
+          : ""
+      }
     </div>
     <div class="flex items-center gap-2">
-      <span class="text-xs font-medium ${statusCls}">${esc(statusText)}</span>
+      <div class="flex flex-col items-end">
+        <span class="text-xs font-medium ${statusCls}">${esc(statusText)}</span>
+        ${
+          l.status_linie === "trimis" && l.data_trimis
+            ? `<span class="text-[10px] text-slate-400 leading-tight">${new Date(l.data_trimis).toLocaleDateString("ro-RO")}</span>`
+            : ""
+        }
+      </div>
       ${
         l.status_linie === "trimis"
           ? ""
-          : `<button data-link-line="${l.id}" class="rounded-md px-3 py-1.5 text-xs font-semibold border" style="border-color:var(--line)">${produs ? "Schimbă produsul" : "Leagă produs"}</button>
+          : `${
+              canManageStock
+                ? `<button data-link-line="${l.id}" class="rounded-md px-3 py-1.5 text-xs font-semibold border" style="border-color:var(--line)">${produs ? "Schimbă produsul" : "Leagă produs"}</button>
              <button data-newprod-line="${l.id}" class="rounded-md px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200">+ Produs nou</button>
              ${
                l.status_linie === "asignat"
                  ? `<button data-unlink-line="${l.id}" class="rounded-md px-3 py-1.5 text-xs font-semibold border text-amber-700" style="border-color:var(--line)">Anulează legătura</button>`
+                 : ""
+             }`
+                : ""
+            }
+             ${
+               canManageLines
+                 ? `<button data-delete-line="${l.id}" class="rounded-md px-3 py-1.5 text-xs font-semibold border text-red-600" style="border-color:var(--line)" title="Șterge acest produs din comandă">Șterge</button>`
                  : ""
              }`
       }
@@ -3103,7 +3345,14 @@
   </div>`;
       }
 
-      function bindComandaLineRow(l, context, paintLines, overlay, agenti) {
+      function bindComandaLineRow(
+        l,
+        context,
+        paintLines,
+        overlay,
+        agenti,
+        lines,
+      ) {
         const row = overlay.querySelector(`[data-linie="${l.id}"]`);
         if (!row) return;
         const linkBtn = row.querySelector(`[data-link-line="${l.id}"]`);
@@ -3157,10 +3406,44 @@
             paintLines();
           });
         }
+        const editProdusBtn = row.querySelector(
+          `[data-edit-produs-line="${l.id}"]`,
+        );
+        if (editProdusBtn) {
+          editProdusBtn.addEventListener("click", () => {
+            const produs = context.produse.find((p) => p.id === l.produs_id);
+            if (!produs) return;
+            renderEditProductModal(
+              produs,
+              context.agenti || [],
+              context.magazine || [],
+              () => paintLines(),
+              context.marci || [],
+            );
+          });
+        }
+        const deleteBtn = row.querySelector(`[data-delete-line="${l.id}"]`);
+        if (deleteBtn && lines) {
+          deleteBtn.addEventListener("click", async () => {
+            const ok = confirm(
+              "Ștergi acest produs din comandă? Acțiunea nu poate fi anulată.",
+            );
+            if (!ok) return;
+            await supa.from("comanda_produse").delete().eq("id", l.id);
+            const idx = lines.findIndex((x) => x.id === l.id);
+            if (idx >= 0) lines.splice(idx, 1);
+            paintLines();
+          });
+        }
       }
 
       // ------------------------------------------------------------------
       // MODAL: detaliul unei comenzi, cu drept de editare (Admin/Superadmin)
+      //
+      // NOTĂ — migrare SQL necesară (o singură dată), neaplicată încă:
+      //   alter table comanda_produse add column if not exists data_trimis timestamptz;
+      // Reține data/ora la care linia a fost trimisă către magazin, afișată
+      // mărunt sub eticheta "Trimis".
       // ------------------------------------------------------------------
       function renderComandaDetailModal(c, lines, context, onSaved) {
         const overlay = document.createElement("div");
@@ -3176,6 +3459,12 @@
             ? "Vânzare directă"
             : "—";
 
+        const isStockManager =
+          currentProfile.role === "admin" ||
+          currentProfile.role === "superadmin";
+        const canManageLines =
+          isStockManager || currentProfile.role === "agent";
+
         overlay.innerHTML = `
     <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-3xl fade-in my-auto">
       <div class="flex items-start justify-between mb-1">
@@ -3185,7 +3474,16 @@
       <p class="text-sm text-slate-500 mb-1">Magazin: <strong>${esc(magazinLabel)}</strong> · Agent: ${esc(c.agent || "—")}</p>
       ${c.observatii ? `<p class="text-xs text-slate-400 mb-3">Observații: ${esc(c.observatii)}</p>` : ""}
       <div id="comanda-lines-detail" class="space-y-2 my-4"></div>
-      <div class="flex gap-2 pt-2 border-t flex-wrap" style="border-color:var(--line)">
+      <div id="comanda-adauga-produs-wrap">
+      ${
+        canManageLines
+          ? `<button type="button" id="comanda-adauga-produs" class="text-xs font-medium underline mb-3" style="color:var(--teal-dark)">+ Adaugă produs</button>`
+          : ""
+      }
+      </div>
+      ${
+        isStockManager
+          ? `<div class="flex gap-2 pt-2 border-t flex-wrap" style="border-color:var(--line)">
         <button id="comanda-anuleaza" class="rounded-lg py-2.5 px-4 text-sm font-medium border text-red-600" style="border-color:var(--line)">Anulează comanda</button>
         ${
           currentProfile.role === "superadmin"
@@ -3195,7 +3493,9 @@
               : `<button id="comanda-cere-stergere" class="rounded-lg py-2.5 px-4 text-sm font-medium border text-red-600" style="border-color:var(--line)">Solicită ștergere</button>`
         }
         <button id="comanda-trimite" class="ml-auto btn-primary rounded-lg py-2.5 px-5 text-sm">Trimite produsele pregătite</button>
-      </div>
+      </div>`
+          : ""
+      }
       <p id="comanda-detail-msg" class="text-sm text-center mt-2"></p>
     </div>`;
         document.body.appendChild(overlay);
@@ -3208,19 +3508,65 @@
         });
 
         const linesEl = document.getElementById("comanda-lines-detail");
+        const addProdusWrap = document.getElementById(
+          "comanda-adauga-produs-wrap",
+        );
         function paintLines() {
-          linesEl.innerHTML = lines
-            .map((l) => comandaLineRow(l, context))
-            .join("");
+          linesEl.innerHTML = lines.length
+            ? lines.map((l) => comandaLineRow(l, context)).join("")
+            : `<p class="text-sm text-slate-400 text-center py-4">Nicio linie de produs în această comandă.</p>`;
           lines.forEach((l) =>
-            bindComandaLineRow(l, context, paintLines, overlay, context.agenti),
+            bindComandaLineRow(
+              l,
+              context,
+              paintLines,
+              overlay,
+              context.agenti,
+              lines,
+            ),
           );
+          // Comanda "Onorată" (toate liniile trimise) nu mai permite
+          // adăugarea de produse noi.
+          const comandaEsteOnorata =
+            lines.length > 0 && computeComandaStatus(lines) === "onorata";
+          if (addProdusWrap)
+            addProdusWrap.style.display = comandaEsteOnorata ? "none" : "";
         }
         paintLines();
 
-        document
-          .getElementById("comanda-trimite")
-          .addEventListener("click", async () => {
+        const addLinieBtn = document.getElementById("comanda-adauga-produs");
+        if (addLinieBtn) {
+          addLinieBtn.addEventListener("click", () => {
+            renderAddLinieComandaModal(
+              context.marci,
+              context.marcaCategorieMap,
+              async (lineData) => {
+                const { data: linieNoua, error } = await supa
+                  .from("comanda_produse")
+                  .insert({
+                    comanda_id: c.id,
+                    categorie: lineData.categorie,
+                    marca: lineData.marca,
+                    culoare: lineData.culoare,
+                    cantitate: lineData.cantitate,
+                    status_linie: "neasignat",
+                  })
+                  .select()
+                  .single();
+                if (error) {
+                  toast("Eroare la adăugarea produsului: " + error.message);
+                  return;
+                }
+                lines.push(linieNoua);
+                paintLines();
+              },
+            );
+          });
+        }
+
+        const btnTrimite = document.getElementById("comanda-trimite");
+        if (btnTrimite)
+          btnTrimite.addEventListener("click", async () => {
             const readyLines = lines.filter(
               (l) => l.status_linie === "asignat",
             );
@@ -3249,11 +3595,13 @@
                 payload.data_comenzii = new Date().toISOString().slice(0, 10);
               }
               await supa.from("produse").update(payload).eq("id", produs.id);
+              const dataTrimis = new Date().toISOString();
               await supa
                 .from("comanda_produse")
-                .update({ status_linie: "trimis" })
+                .update({ status_linie: "trimis", data_trimis: dataTrimis })
                 .eq("id", l.id);
               l.status_linie = "trimis";
+              l.data_trimis = dataTrimis;
               Object.assign(produs, payload);
             }
 
@@ -3271,9 +3619,9 @@
             onSaved();
           });
 
-        document
-          .getElementById("comanda-anuleaza")
-          .addEventListener("click", async () => {
+        const btnAnuleaza = document.getElementById("comanda-anuleaza");
+        if (btnAnuleaza)
+          btnAnuleaza.addEventListener("click", async () => {
             const ok = confirm(`Anulezi definitiv comanda ${c.numar_comanda}?`);
             if (!ok) return;
             await supa
@@ -3335,6 +3683,69 @@
       }
 
       // ------------------------------------------------------------------
+      // MODAL: adaugă rapid un produs (linie) nou într-o comandă existentă
+      // (Admin/Superadmin/Agent) — reutilizează editorul de linii de la
+      // "Comandă nouă", dar salvează o singură linie direct în DB.
+      // ------------------------------------------------------------------
+      function renderAddLinieComandaModal(marci, marcaCategorieMap, onAdd) {
+        const overlay = document.createElement("div");
+        overlay.id = "add-linie-comanda-overlay";
+        overlay.className =
+          "fixed inset-0 z-50 flex items-center justify-center px-4 py-8 overflow-y-auto";
+        overlay.style.background = "rgba(15,20,25,0.55)";
+        overlay.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg fade-in my-auto">
+      <h2 class="text-lg font-bold mb-3">Adaugă produs în comandă</h2>
+      <div id="add-linie-lines" class="space-y-2"></div>
+      <div class="flex gap-2 pt-4">
+        <button type="button" id="add-linie-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
+        <button type="button" id="add-linie-save" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Adaugă</button>
+      </div>
+      <p id="add-linie-msg" class="text-sm text-center mt-2"></p>
+    </div>`;
+        document.body.appendChild(overlay);
+
+        document
+          .getElementById("add-linie-cancel")
+          .addEventListener("click", () => overlay.remove());
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+
+        const editor = renderComandaLinesEditor(
+          document.getElementById("add-linie-lines"),
+          marci,
+          marcaCategorieMap,
+        );
+
+        document
+          .getElementById("add-linie-save")
+          .addEventListener("click", async () => {
+            const msg = document.getElementById("add-linie-msg");
+            const lines = editor.getLines();
+            if (!lines.length) {
+              msg.className = "text-sm text-center text-red-600";
+              msg.textContent =
+                "Completează cel puțin categoria, marca sau culoarea.";
+              return;
+            }
+            overlay.remove();
+            // Fiecare unitate din cantitate devine o linie separată,
+            // exact ca la crearea unei comenzi noi.
+            for (const l of lines) {
+              for (let i = 0; i < l.cantitate; i++) {
+                await onAdd({
+                  categorie: l.categorie,
+                  marca: l.marca,
+                  culoare: l.culoare,
+                  cantitate: 1,
+                });
+              }
+            }
+          });
+      }
+
+      // ------------------------------------------------------------------
       // MODAL: detaliul unei comenzi, doar vizualizare (Agent / Magazin)
       // ------------------------------------------------------------------
       function renderComandaReadonlyModal(c, lines, profiles) {
@@ -3370,7 +3781,10 @@
             <div class="font-medium">${esc(l.categorie || "—")}${l.marca ? " · " + esc(l.marca) : ""}${l.culoare ? " · " + esc(l.culoare) : ""}</div>
             <div class="text-xs text-slate-400">Cantitate: ${l.cantitate}</div>
           </div>
-          <span class="text-xs font-medium ${l.status_linie === "trimis" ? "text-emerald-700" : l.status_linie === "realocat" ? "text-red-600" : l.status_linie === "asignat" ? "text-blue-700" : "text-amber-700"}">${esc(lineStatusLabel(l.status_linie))}</span>
+          <div class="flex flex-col items-end">
+            <span class="text-xs font-medium ${l.status_linie === "trimis" ? "text-emerald-700" : l.status_linie === "realocat" ? "text-red-600" : l.status_linie === "asignat" ? "text-blue-700" : "text-amber-700"}">${esc(lineStatusLabel(l.status_linie))}</span>
+            ${l.status_linie === "trimis" && l.data_trimis ? `<span class="text-[10px] text-slate-400 leading-tight">${new Date(l.data_trimis).toLocaleDateString("ro-RO")}</span>` : ""}
+          </div>
         </div>`,
           )
           .join("")}
@@ -3435,13 +3849,20 @@
       <p class="text-sm text-slate-500">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"}</p>
       <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Comandă nouă</button>
     </div>
+    ${statusFilterChipsHtml(comenziStatusFilter)}
     <div class="space-y-1.5" id="comenzi-list"></div>`;
 
+        bindStatusFilterChips(container, () => renderComenziAdmin(container));
+
+        const comenziFiltrate = filtreazaComenziDupaStatus(
+          comenzi || [],
+          linii || [],
+        );
         const list = document.getElementById("comenzi-list");
-        if (!(comenzi || []).length) {
-          list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă încă.</p></div>`;
+        if (!comenziFiltrate.length) {
+          list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă găsită.</p></div>`;
         } else {
-          list.innerHTML = comenzi
+          list.innerHTML = comenziFiltrate
             .map((c) =>
               comandaCard(
                 c,
@@ -3450,7 +3871,7 @@
               ),
             )
             .join("");
-          comenzi.forEach((c) => {
+          comenziFiltrate.forEach((c) => {
             document
               .querySelector(`[data-open-comanda="${c.id}"]`)
               .addEventListener("click", () => {
@@ -3543,13 +3964,28 @@
       <p class="text-sm text-slate-500">${myComenzi.length} ${myComenzi.length === 1 ? "comandă" : "comenzi"} create de tine</p>
       <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm" ${magazineAsignate.length ? "" : 'disabled title="Nu ai niciun magazin alocat"'}>+ Comandă nouă</button>
     </div>
+    ${statusFilterChipsHtml(comenziStatusFilter)}
     <div class="space-y-1.5" id="comenzi-list"></div>`;
 
+        bindStatusFilterChips(container, () => renderComenziAgent(container));
+
+        const myComenziFiltrate = filtreazaComenziDupaStatus(
+          myComenzi,
+          myLinii,
+        );
+        const agentContext = {
+          magazine: magazineToate,
+          agenti: [],
+          allLinii: linii || [],
+          produse: produse || [],
+          marci,
+          marcaCategorieMap,
+        };
         const list = document.getElementById("comenzi-list");
-        if (!myComenzi.length) {
-          list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă creată încă.</p></div>`;
+        if (!myComenziFiltrate.length) {
+          list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă găsită.</p></div>`;
         } else {
-          list.innerHTML = myComenzi
+          list.innerHTML = myComenziFiltrate
             .map((c) =>
               comandaCard(
                 c,
@@ -3558,14 +3994,15 @@
               ),
             )
             .join("");
-          myComenzi.forEach((c) => {
+          myComenziFiltrate.forEach((c) => {
             document
               .querySelector(`[data-open-comanda="${c.id}"]`)
               .addEventListener("click", () => {
-                renderComandaReadonlyModal(
+                renderComandaDetailModal(
                   c,
                   myLinii.filter((l) => l.comanda_id === c.id),
-                  profiles,
+                  agentContext,
+                  () => renderComenziAgent(container),
                 );
               });
           });
@@ -3598,6 +4035,8 @@
         const [
           { data: comenzi, error: comErr },
           { data: linii, error: liniiErr },
+          { data: alocareHub, error: hubErr },
+          { data: produse },
         ] = await Promise.all([
           (() => {
             let q = supa
@@ -3612,48 +4051,90 @@
             return orFilter ? q.or(orFilter) : q;
           })(),
           supa.from("comanda_produse").select("*"),
+          supa
+            .from("hub_magazine")
+            .select("*")
+            .eq("magazin_id", currentUser.id),
+          supa.from("produse").select("*"),
         ]);
 
-        if (comErr || liniiErr) {
-          const e = comErr || liniiErr;
+        if (comErr || liniiErr || hubErr) {
+          const e = comErr || liniiErr || hubErr;
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(e.message)}</div>`;
           return;
         }
+
+        // Un magazin alocat unui Magazin-HUB nu mai poate crea comenzi
+        // proprii — comanda se face de către HUB, în numele lui.
+        const esteAlocatUnuiHub = (alocareHub || []).length > 0;
 
         const myComenziIds = new Set((comenzi || []).map((c) => c.id));
         const myLinii = (linii || []).filter((l) =>
           myComenziIds.has(l.comanda_id),
         );
+        const marci = distinctMarci([...(produse || []), ...(linii || [])]);
+        const marcaCategorieMap = buildMarcaCategorieMap(produse || []);
 
         container.innerHTML = `
-    <p class="text-sm text-slate-500 mb-4">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"} pentru magazinul tău</p>
+    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
+      <p class="text-sm text-slate-500">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"} pentru magazinul tău</p>
+      ${
+        esteAlocatUnuiHub
+          ? ""
+          : `<button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Comandă nouă</button>`
+      }
+    </div>
+    ${statusFilterChipsHtml(comenziStatusFilter)}
     <div class="space-y-1.5" id="comenzi-list"></div>`;
 
+        bindStatusFilterChips(container, () => renderComenziMagazin(container));
+
+        const comenziFiltrate = filtreazaComenziDupaStatus(
+          comenzi || [],
+          myLinii,
+        );
         const list = document.getElementById("comenzi-list");
-        if (!(comenzi || []).length) {
-          list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă momentan.</p></div>`;
-          return;
-        }
-        list.innerHTML = comenzi
-          .map((c) =>
-            comandaCard(
-              c,
-              myLinii.filter((l) => l.comanda_id === c.id),
-              [currentProfile],
-            ),
-          )
-          .join("");
-        comenzi.forEach((c) => {
-          document
-            .querySelector(`[data-open-comanda="${c.id}"]`)
-            .addEventListener("click", () => {
-              renderComandaReadonlyModal(
+        if (!comenziFiltrate.length) {
+          list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă găsită.</p></div>`;
+        } else {
+          list.innerHTML = comenziFiltrate
+            .map((c) =>
+              comandaCard(
                 c,
                 myLinii.filter((l) => l.comanda_id === c.id),
                 [currentProfile],
-              );
-            });
-        });
+              ),
+            )
+            .join("");
+          comenziFiltrate.forEach((c) => {
+            document
+              .querySelector(`[data-open-comanda="${c.id}"]`)
+              .addEventListener("click", () => {
+                renderComandaReadonlyModal(
+                  c,
+                  myLinii.filter((l) => l.comanda_id === c.id),
+                  [currentProfile],
+                );
+              });
+          });
+        }
+
+        const btnAdd = document.getElementById("btn-add-comanda");
+        if (btnAdd) {
+          btnAdd.addEventListener("click", () => {
+            renderNewComandaModal(
+              "agent",
+              {
+                magazineAsignate: [currentProfile],
+                marci,
+                marcaCategorieMap,
+                produse: produse || [],
+                allLinii: linii || [],
+              },
+              () => renderComenziMagazin(container),
+            );
+          });
+        }
       }
 
       // ------------------------------------------------------------------
@@ -3686,6 +4167,7 @@
         const [
           { data: comenzi, error: comErr },
           { data: linii, error: liniiErr },
+          { data: produse },
         ] = await Promise.all([
           (() => {
             let q = supa
@@ -3700,6 +4182,7 @@
             return orFilter ? q.or(orFilter) : q;
           })(),
           supa.from("comanda_produse").select("*"),
+          supa.from("produse").select("*"),
         ]);
         if (comErr || liniiErr) {
           const e = comErr || liniiErr;
@@ -3710,36 +4193,64 @@
         const myLinii = (linii || []).filter((l) =>
           myComenziIds.has(l.comanda_id),
         );
+        const marci = distinctMarci([...(produse || []), ...(linii || [])]);
+        const marcaCategorieMap = buildMarcaCategorieMap(produse || []);
 
         container.innerHTML = `
-    <p class="text-sm text-slate-500 mb-4">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"} pentru magazinele alocate</p>
+    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
+      <p class="text-sm text-slate-500">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"} pentru magazinele alocate</p>
+      <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Comandă nouă</button>
+    </div>
+    ${statusFilterChipsHtml(comenziStatusFilter)}
     <div class="space-y-1.5" id="comenzi-list"></div>`;
 
+        bindStatusFilterChips(container, () => renderComenziHub(container));
+
+        const comenziFiltrate = filtreazaComenziDupaStatus(
+          comenzi || [],
+          myLinii,
+        );
         const list = document.getElementById("comenzi-list");
-        if (!(comenzi || []).length) {
-          list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă momentan.</p></div>`;
-          return;
-        }
-        list.innerHTML = comenzi
-          .map((c) =>
-            comandaCard(
-              c,
-              myLinii.filter((l) => l.comanda_id === c.id),
-              magazine,
-            ),
-          )
-          .join("");
-        comenzi.forEach((c) => {
-          document
-            .querySelector(`[data-open-comanda="${c.id}"]`)
-            .addEventListener("click", () => {
-              renderComandaReadonlyModal(
+        if (!comenziFiltrate.length) {
+          list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă găsită.</p></div>`;
+        } else {
+          list.innerHTML = comenziFiltrate
+            .map((c) =>
+              comandaCard(
                 c,
                 myLinii.filter((l) => l.comanda_id === c.id),
                 magazine,
-              );
-            });
-        });
+              ),
+            )
+            .join("");
+          comenziFiltrate.forEach((c) => {
+            document
+              .querySelector(`[data-open-comanda="${c.id}"]`)
+              .addEventListener("click", () => {
+                renderComandaReadonlyModal(
+                  c,
+                  myLinii.filter((l) => l.comanda_id === c.id),
+                  magazine,
+                );
+              });
+          });
+        }
+
+        document
+          .getElementById("btn-add-comanda")
+          .addEventListener("click", () => {
+            renderNewComandaModal(
+              "agent",
+              {
+                magazineAsignate: magazine,
+                marci,
+                marcaCategorieMap,
+                produse: produse || [],
+                allLinii: linii || [],
+              },
+              () => renderComenziHub(container),
+            );
+          });
       }
 
       // ------------------------------------------------------------------
@@ -3876,7 +4387,7 @@
         );
         container.innerHTML = `
     <p class="text-sm text-slate-500 mb-4">${(produse || []).length} produs${(produse || []).length === 1 ? "" : "e"} în stocul magazinului tău</p>
-    <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
+    <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
       <table class="w-full text-sm min-w-[1100px]">
         <thead>
           <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
@@ -3892,6 +4403,7 @@
             <th class="px-3 py-3 font-medium">Alte costuri</th>
             <th class="px-3 py-3 font-medium">Total fără TVA</th>
             <th class="px-3 py-3 font-medium">Preț cu TVA</th>
+            <th class="px-3 py-3 font-medium">Preț Recomandat</th>
             <th class="px-3 py-3 font-medium">Acțiuni</th>
           </tr>
         </thead>
@@ -3918,6 +4430,7 @@
             <td class="px-3 py-3 text-xs">${fmtNum(p.alte_costuri)}</td>
             <td class="px-3 py-3 text-xs font-medium">${fmtNum(p.total_fara_tva)}</td>
             <td class="px-3 py-3 text-xs font-medium">${fmtNum(p.pret_cu_tva)}</td>
+            <td class="px-3 py-3 text-xs">${p.pret_recomandat !== null && p.pret_recomandat !== undefined ? fmtNum(p.pret_recomandat) : "—"}</td>
             <td class="px-3 py-3 whitespace-nowrap">
               <button type="button" data-vinde-produs="${p.id}" class="vinde-produs-btn btn-primary rounded-md px-3 py-1.5 text-xs">Vinde produsul</button>
             </td>
@@ -4010,7 +4523,7 @@
             return `
       <div class="mb-6">
         <h3 class="text-sm font-semibold text-slate-700 mb-2">${esc(label)} <span class="text-slate-400 font-normal">(${stocMagazin.length} produse)</span></h3>
-        <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
+        <div class="bg-white rounded-xl border tabel-fix-wrap tabel-fix-wrap-nested" style="border-color:var(--line)">
           <table class="w-full text-sm min-w-[900px]">
             <thead>
               <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
@@ -4022,6 +4535,7 @@
                 <th class="px-3 py-2 font-medium">VIN</th>
                 <th class="px-3 py-2 font-medium">Preț vânzare</th>
                 <th class="px-3 py-2 font-medium">Preț cu TVA</th>
+                <th class="px-3 py-2 font-medium">Preț Recomandat</th>
               </tr>
             </thead>
             <tbody>
@@ -4045,10 +4559,11 @@
                 <td class="px-3 py-2 text-xs font-mono">${esc(p.vin || "—")}</td>
                 <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_vanzare)}</td>
                 <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_cu_tva)}</td>
+                <td class="px-3 py-2 text-xs">${p.pret_recomandat !== null && p.pret_recomandat !== undefined ? fmtNum(p.pret_recomandat) : "—"}</td>
               </tr>`;
                       })
                       .join("")
-                  : `<tr><td colspan="8" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
+                  : `<tr><td colspan="9" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
               }
             </tbody>
           </table>
@@ -4136,7 +4651,7 @@
             return `
       <div class="mb-6">
         <h3 class="text-sm font-semibold text-slate-700 mb-2">${esc(label)} <span class="text-slate-400 font-normal">(${stocMagazin.length} produse)</span></h3>
-        <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
+        <div class="bg-white rounded-xl border tabel-fix-wrap tabel-fix-wrap-nested" style="border-color:var(--line)">
           <table class="w-full text-sm min-w-[900px]">
             <thead>
               <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
@@ -4148,6 +4663,7 @@
                 <th class="px-3 py-2 font-medium">VIN</th>
                 <th class="px-3 py-2 font-medium">Preț vânzare</th>
                 <th class="px-3 py-2 font-medium">Preț cu TVA</th>
+                <th class="px-3 py-2 font-medium">Preț Recomandat</th>
               </tr>
             </thead>
             <tbody>
@@ -4171,10 +4687,11 @@
                 <td class="px-3 py-2 text-xs font-mono">${esc(p.vin || "—")}</td>
                 <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_vanzare)}</td>
                 <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_cu_tva)}</td>
+                <td class="px-3 py-2 text-xs">${p.pret_recomandat !== null && p.pret_recomandat !== undefined ? fmtNum(p.pret_recomandat) : "—"}</td>
               </tr>`;
                       })
                       .join("")
-                  : `<tr><td colspan="8" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
+                  : `<tr><td colspan="9" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
               }
             </tbody>
           </table>
@@ -4203,9 +4720,15 @@
       // "Sat An - Valea lui Mihai"), la fel cum un agent are magazine
       // alocate prin `agent_magazine`. HUB-ul vede (read-only, agregat pe
       // toate magazinele alocate) exact ce vede un cont de magazin:
-      // Stocul meu, Comenzile mele, Încărcare baterii, Produse vândute —
-      // dar nu poate marca o încărcare de baterie și nu poate iniția o
-      // vânzare (fără butoane de acțiune în aceste liste).
+      // Stocul meu, Încărcare baterii, Produse vândute — dar nu poate
+      // marca o încărcare de baterie și nu poate iniția o vânzare (fără
+      // butoane de acțiune în aceste liste).
+      //
+      // EXCEPȚIE — tab "Comenzi": HUB-ul POATE crea comenzi noi pentru
+      // magazinele alocate (la fel ca un Agent). Un magazin nealocat
+      // niciunui HUB poate crea comenzi pentru el însuși; un magazin
+      // alocat unui HUB nu mai poate crea comenzi proprii (comanda se
+      // face doar prin HUB).
       //
       // Migrare SQL necesară (o singură dată, în Supabase SQL editor):
       //
@@ -4245,6 +4768,25 @@
       //   --   where hm.magazin_id = produse.magazin_id
       //   --   and hm.hub_id = auth.uid()
       //   -- )
+      //
+      //   -- RLS pentru crearea de comenzi de către HUB și Magazin (insert
+      //   -- pe `comenzi`/`comanda_produse`), pe lângă politica deja
+      //   -- existentă pentru Agent (creat_de = auth.uid()):
+      //   -- create policy "hub insert comenzi pt magazinele alocate"
+      //   --   on comenzi for insert
+      //   --   with check (
+      //   --     creat_de = auth.uid() and exists (
+      //   --       select 1 from hub_magazine hm
+      //   --       where hm.hub_id = auth.uid() and hm.magazin_id = comenzi.magazin_id
+      //   --     )
+      //   --   );
+      //   -- create policy "magazin insert comanda proprie daca nu e alocat unui hub"
+      //   --   on comenzi for insert
+      //   --   with check (
+      //   --     creat_de = auth.uid() and magazin_id = auth.uid() and not exists (
+      //   --       select 1 from hub_magazine hm where hm.magazin_id = auth.uid()
+      //   --     )
+      //   --   );
       // ------------------------------------------------------------------
 
       function renderAgentComenziTab(container) {
@@ -4674,7 +5216,7 @@
           return `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun produs de urmărit momentan.</p></div>`;
         }
         return `
-    <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
+    <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
       <table class="w-full text-sm min-w-[900px]">
         <thead>
           <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
@@ -5353,7 +5895,7 @@
         }
         const showMagazinCol = typeof magazinLabelFn === "function";
         return `
-    <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
+    <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
       <table class="w-full text-sm min-w-[1100px]">
         <thead>
           <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
@@ -5736,6 +6278,7 @@
           { key: "alte_costuri", label: "Alte costuri" },
           { key: "total_fara_tva", label: "Total fără TVA" },
           { key: "pret_cu_tva", label: "Preț cu TVA" },
+          { key: "pret_recomandat", label: "Preț Recomandat" },
           { key: "telefon", label: "Telefon" },
           { key: "adresa_facturare", label: "Adresă facturare" },
           { key: "vandut_label", label: "Vândut" },
@@ -5773,6 +6316,7 @@
           case "alte_costuri":
           case "total_fara_tva":
           case "pret_cu_tva":
+          case "pret_recomandat":
             return p[key] !== null && p[key] !== undefined
               ? fmtNum(p[key])
               : "—";
@@ -5849,7 +6393,7 @@
           return `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun rezultat pentru filtrele selectate.</p></div>`;
         }
         return `
-    <div class="bg-white rounded-xl border overflow-x-auto" style="border-color:var(--line)">
+    <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
       <table class="w-full text-sm min-w-[1400px]">
         <thead>
           <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
