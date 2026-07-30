@@ -110,19 +110,63 @@
         }
       }
 
-      /* Linii de grilă (orizontale + verticale) pentru toate tabelele de
-         listare din aplicație — subțiri, dar mult mai vizibile decât
-         --line, spre negru. Regulă globală, aditivă: nu modifică markup-ul
-         niciunui tabel existent. */
-      :root {
-        --line-strong: #1e293b;
-      }
+      /* ================================================================
+         Aspect tip "dale" / listă elegantă pentru toate tabelele de
+         produse din aplicație (toate rolurile, toate meniurile) —
+         înlocuiește vechiul aspect de grilă/tabel sec (linii pe orizontală
+         + verticală, colorate spre negru) cu unul mai modern și mai
+         profesional: fără linii verticale, zebra discretă + hover pe rând,
+         header distinct, rânduri cât mai subțiri (înălțime strict
+         necesară conținutului — ex. 2 rânduri de text). Regulă globală,
+         aditivă: nu modifică markup-ul niciunui tabel existent — se
+         aplică automat peste orice tabel aflat într-un .tabel-fix-wrap
+         (toate listele din aplicație folosesc deja acest wrapper). */
       table {
-        border-collapse: collapse;
+        border-collapse: separate;
+        border-spacing: 0;
       }
-      table th,
-      table td {
-        border: 1px solid var(--line-strong);
+      /* Folosită doar de rândul "TOTAL" din Statistici, ca linie de
+         separare mai accentuată față de restul rândurilor. */
+      :root {
+        --line-strong: #94a3b8;
+      }
+      .tabel-fix-wrap table th,
+      .tabel-fix-wrap table td {
+        border: none;
+        border-bottom: 1px solid #eef1f3;
+      }
+      .tabel-fix-wrap table tbody tr:last-child td {
+        border-bottom: none;
+      }
+      .tabel-fix-wrap table tbody tr {
+        --row-bg: #fff;
+        background-color: var(--row-bg);
+        transition: background-color 0.12s ease;
+      }
+      .tabel-fix-wrap table tbody tr:nth-child(even) {
+        --row-bg: #fafbfc;
+      }
+      .tabel-fix-wrap table tbody tr:hover {
+        --row-bg: #eefaf7;
+      }
+      /* Păstrează evidențierea chihlimbarie a rândurilor "Rezervat" din
+         Depozit central (bg-amber-50/60 aplicat condiționat pe <tr>),
+         integrată în același mecanism de fundal pe bază de variabilă. */
+      .tabel-fix-wrap table tbody tr[class*="bg-amber"] {
+        --row-bg: #fef3e2;
+      }
+      .tabel-fix-wrap table tbody tr[class*="bg-amber"]:hover {
+        --row-bg: #fde8c8;
+      }
+      .tabel-fix-wrap table td {
+        padding-top: 6px !important;
+        padding-bottom: 6px !important;
+        line-height: 1.25;
+      }
+      .tabel-fix-wrap table td input,
+      .tabel-fix-wrap table td select {
+        padding-top: 4px !important;
+        padding-bottom: 4px !important;
       }
 
       /* Coloana "Adresă" din Produse vândute — trunchiată la 2 rânduri
@@ -149,6 +193,7 @@
         overflow: auto;
         max-height: calc(100vh - 250px);
         position: relative;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
       }
       .tabel-fix-wrap.tabel-fix-wrap-nested {
         max-height: 340px;
@@ -157,17 +202,26 @@
         position: sticky;
         top: 0;
         z-index: 3;
-        background: #fff;
+        background: #f7f9fb;
+        color: #55606b;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+        border-bottom: 1px solid var(--line);
       }
       .tabel-fix-wrap table th:first-child,
       .tabel-fix-wrap table td:first-child {
         position: sticky;
         left: 0;
         z-index: 1;
-        background: #fff;
+        background: var(--row-bg, #fff);
       }
       .tabel-fix-wrap table thead th:first-child {
         z-index: 4;
+        background: #f7f9fb;
       }
       @media (max-width: 767px) {
         .tabel-fix-wrap {
@@ -1155,6 +1209,11 @@
       //   alter table produse add column if not exists pret_recomandat numeric;
       //   alter table produse add column if not exists discount numeric default 0;
       //
+      // Migrare SQL necesară (o singură dată) pentru cerința din sarcini2.md
+      // — tip discount (sumă/procent):
+      //
+      //   alter table produse add column if not exists discount_tip text default 'suma';
+      //
       const CATEGORII_PRODUS = [
         "Bicicletă electrică",
         "Tricicletă electrică",
@@ -1387,6 +1446,7 @@
         totalInput,
         tvaInput,
         discountInput,
+        discountTipInput,
       }) {
         function updateTotalTva() {
           const vanzareStr = vanzareInput.value.trim();
@@ -1400,8 +1460,16 @@
           const discount = discountInput
             ? parseFloat(discountInput.value) || 0
             : 0;
+          // "suma": discountul e o valoare fixă scăzută direct din total;
+          // "procent": comportamentul vechi (procent scăzut din total).
+          const discountTip = discountTipInput
+            ? discountTipInput.value
+            : "procent";
           const totalBrut = vanzare + alte;
-          const total = totalBrut * (1 - discount / 100);
+          const total =
+            discountTip === "suma"
+              ? totalBrut - discount
+              : totalBrut * (1 - discount / 100);
           totalInput.value = fmtNum(total);
           tvaInput.value = fmtNum(total * (1 + TVA_RATE));
         }
@@ -2188,13 +2256,28 @@
           <div>${fieldLabel("Preț de intrare (fără TVA)")}<input type="number" step="0.01" id="add-pret-intrare" class="${inputBase()} price-field"></div>
           <div>${fieldLabel("Preț vânzare (fără TVA)")}<input type="number" step="0.01" id="add-pret-vanzare" class="${inputBase()} price-field"></div>
         </div>
-        <div>${fieldLabel("Alte costuri fără TVA (transport, ambalare etc.)")}<input type="number" step="0.01" id="add-alte-costuri" class="${inputBase()} price-field" value="0"></div>
-        <div class="grid grid-cols-3 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
+        <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
           <div>${fieldLabel("Adaos")}<input type="number" step="0.01" id="add-adaos" class="${inputBase()} calc-field font-semibold"></div>
+          <div>${fieldLabel("Alte costuri fără TVA")}<input type="number" step="0.01" id="add-alte-costuri" class="${inputBase()} price-field" value="0"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
           <div>${fieldLabel("Total fără TVA")}<input type="number" step="0.01" id="add-total" class="${inputBase()} calc-field font-semibold"></div>
           <div>${fieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="add-tva" class="${inputBase()} calc-field font-semibold"></div>
         </div>
-        <div>${fieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="add-pret-recomandat" class="${inputBase()}"></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>${fieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="add-pret-recomandat" class="${inputBase()}"></div>
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-sm font-medium text-slate-700">Discount</label>
+              <div class="flex gap-1">
+                <button type="button" data-tip="suma" class="add-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border btn-primary" style="border-color:var(--line)">Sumă</button>
+                <button type="button" data-tip="procent" class="add-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border" style="border-color:var(--line)">%</button>
+              </div>
+            </div>
+            <input type="number" step="0.01" min="0" id="add-discount" class="${inputBase()}" value="0">
+            <input type="hidden" id="add-discount-tip" value="suma">
+          </div>
+        </div>
         <p class="text-xs text-slate-400">Data comenzii, magazinul, telefonul și adresa de facturare se completează automat la vânzarea produsului.</p>
         <div class="flex gap-2 pt-1">
           <button type="button" id="add-produs-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
@@ -2253,13 +2336,27 @@
         const addAdaos = document.getElementById("add-adaos");
         const addTotal = document.getElementById("add-total");
         const addTva = document.getElementById("add-tva");
-        attachPriceAutoCalc({
+        const addDiscount = document.getElementById("add-discount");
+        const addDiscountTip = document.getElementById("add-discount-tip");
+        const { updateTotalTva: addUpdateTotalTva } = attachPriceAutoCalc({
           intrareInput: addIntrare,
           vanzareInput: addVanzare,
           adaosInput: addAdaos,
           alteInput: addAlte,
           totalInput: addTotal,
           tvaInput: addTva,
+          discountInput: addDiscount,
+          discountTipInput: addDiscountTip,
+        });
+
+        overlay.querySelectorAll(".add-discount-tip-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            addDiscountTip.value = btn.dataset.tip;
+            overlay
+              .querySelectorAll(".add-discount-tip-btn")
+              .forEach((b) => b.classList.toggle("btn-primary", b === btn));
+            addUpdateTotalTva();
+          });
         });
 
         document
@@ -2295,6 +2392,9 @@
               .value.trim()
               ? parseFloat(document.getElementById("add-pret-recomandat").value)
               : null;
+            const discountVal = addDiscount.value.trim()
+              ? parseFloat(addDiscount.value)
+              : 0;
 
             btn.disabled = true;
             btn.textContent = "Se salvează...";
@@ -2317,6 +2417,8 @@
                 total_fara_tva: total,
                 pret_cu_tva: cuTva,
                 pret_recomandat: pretRecomandat,
+                discount: discountVal,
+                discount_tip: addDiscountTip.value,
                 created_by: currentUser.id,
               })
               .select()
@@ -2402,19 +2504,26 @@
           <div>${fieldLabel("Preț de intrare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-intrare" class="${inputBase()} price-field" value="${p.pret_intrare ?? ""}"></div>
           <div>${fieldLabel("Preț vânzare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-vanzare" class="${inputBase()} price-field" value="${p.pret_vanzare ?? ""}"></div>
         </div>
-        <div>${fieldLabel("Alte costuri fără TVA (transport, ambalare etc.)")}<input type="number" step="0.01" id="edit-alte-costuri" class="${inputBase()} price-field" value="${p.alte_costuri ?? 0}"></div>
-        <div class="grid grid-cols-3 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
+        <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
           <div>${fieldLabel("Adaos")}<input type="number" step="0.01" id="edit-adaos" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.adaos)}"></div>
+          <div>${fieldLabel("Alte costuri fără TVA")}<input type="number" step="0.01" id="edit-alte-costuri" class="${inputBase()} price-field" value="${p.alte_costuri ?? 0}"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
           <div>${fieldLabel("Total fără TVA")}<input type="number" step="0.01" id="edit-total" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.total_fara_tva)}"></div>
           <div>${fieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="edit-tva" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.pret_cu_tva)}"></div>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>${fieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="edit-pret-recomandat" class="${inputBase()}" value="${p.pret_recomandat ?? ""}"></div>
-          <div>${fieldLabel("Discount")}
-            <div class="relative">
-              <input type="number" step="0.01" min="0" max="100" id="edit-discount" class="${inputBase()} pr-7" value="${p.discount ?? 0}">
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">%</span>
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-sm font-medium text-slate-700">Discount</label>
+              <div class="flex gap-1">
+                <button type="button" data-tip="suma" class="edit-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border ${(p.discount_tip || "suma") === "suma" ? "btn-primary" : ""}" style="border-color:var(--line)">Sumă</button>
+                <button type="button" data-tip="procent" class="edit-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border ${p.discount_tip === "procent" ? "btn-primary" : ""}" style="border-color:var(--line)">%</button>
+              </div>
             </div>
+            <input type="number" step="0.01" min="0" id="edit-discount" class="${inputBase()}" value="${p.discount ?? 0}">
+            <input type="hidden" id="edit-discount-tip" value="${p.discount_tip || "suma"}">
           </div>
         </div>
         <div class="flex gap-2 pt-1">
@@ -2475,7 +2584,8 @@
         const editTotal = document.getElementById("edit-total");
         const editTva = document.getElementById("edit-tva");
         const editDiscount = document.getElementById("edit-discount");
-        attachPriceAutoCalc({
+        const editDiscountTip = document.getElementById("edit-discount-tip");
+        const { updateTotalTva: editUpdateTotalTva } = attachPriceAutoCalc({
           intrareInput: editIntrare,
           vanzareInput: editVanzare,
           adaosInput: editAdaos,
@@ -2483,6 +2593,17 @@
           totalInput: editTotal,
           tvaInput: editTva,
           discountInput: editDiscount,
+          discountTipInput: editDiscountTip,
+        });
+
+        overlay.querySelectorAll(".edit-discount-tip-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            editDiscountTip.value = btn.dataset.tip;
+            overlay
+              .querySelectorAll(".edit-discount-tip-btn")
+              .forEach((b) => b.classList.toggle("btn-primary", b === btn));
+            editUpdateTotalTva();
+          });
         });
 
         document
@@ -2547,6 +2668,7 @@
                 pret_cu_tva: cuTva,
                 pret_recomandat: pretRecomandat,
                 discount: discountVal,
+                discount_tip: editDiscountTip.value,
                 updated_at: new Date().toISOString(),
               })
               .eq("id", p.id);
