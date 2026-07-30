@@ -109,24 +109,10 @@
           transform: translateY(0);
         }
       }
-
-      /* ================================================================
-         Aspect tip "dale" / listă elegantă pentru toate tabelele de
-         produse din aplicație (toate rolurile, toate meniurile) —
-         înlocuiește vechiul aspect de grilă/tabel sec (linii pe orizontală
-         + verticală, colorate spre negru) cu unul mai modern și mai
-         profesional: fără linii verticale, zebra discretă + hover pe rând,
-         header distinct, rânduri cât mai subțiri (înălțime strict
-         necesară conținutului — ex. 2 rânduri de text). Regulă globală,
-         aditivă: nu modifică markup-ul niciunui tabel existent — se
-         aplică automat peste orice tabel aflat într-un .tabel-fix-wrap
-         (toate listele din aplicație folosesc deja acest wrapper). */
       table {
         border-collapse: separate;
         border-spacing: 0;
       }
-      /* Folosită doar de rândul "TOTAL" din Statistici, ca linie de
-         separare mai accentuată față de restul rândurilor. */
       :root {
         --line-strong: #94a3b8;
       }
@@ -149,9 +135,6 @@
       .tabel-fix-wrap table tbody tr:hover {
         --row-bg: #eefaf7;
       }
-      /* Păstrează evidențierea chihlimbarie a rândurilor "Rezervat" din
-         Depozit central (bg-amber-50/60 aplicat condiționat pe <tr>),
-         integrată în același mecanism de fundal pe bază de variabilă. */
       .tabel-fix-wrap table tbody tr[class*="bg-amber"] {
         --row-bg: #fef3e2;
       }
@@ -168,9 +151,6 @@
         padding-top: 4px !important;
         padding-bottom: 4px !important;
       }
-
-      /* Coloana "Adresă" din Produse vândute — trunchiată la 2 rânduri
-         pentru a micșora înălțimea liniilor; click pe text o extinde. */
       .adresa-cell {
         cursor: pointer;
       }
@@ -184,11 +164,6 @@
         -webkit-line-clamp: unset;
         overflow: visible;
       }
-
-      /* Container fix pentru tabelele de produse/comenzi din meniuri:
-         header blocat (sticky) pe verticală, prima coloană (Nr.) blocată
-         pe orizontală, iar containerul nu depășește marginea de jos a
-         ecranului — restul paginii (titluri, filtre, butoane) rămâne fix. */
       .tabel-fix-wrap {
         overflow: auto;
         max-height: calc(100vh - 250px);
@@ -231,9 +206,6 @@
     </style>
   </head>
   <body class="min-h-screen">
-    <!-- ============================================================ -->
-    <!-- CONFIG SUPABASE — completează cu datele proiectului tău      -->
-    <!-- ============================================================ -->
     <script>
       const SUPABASE_URL = "https://ksjvpuyiuplaonpbwrfn.supabase.co";
       const SUPABASE_ANON_KEY =
@@ -252,29 +224,19 @@
       let currentProfile = null;
       let recoveryMode = false;
       let currentTabKey = null;
-      // Termenul de căutare curent, păstrat separat pentru fiecare meniu
-      // (tab), ca la schimbarea meniului să nu se piardă căutarea anterioară.
       const tabSearchTerms = {};
       let searchDebounceTimer = null;
 
-      // Construiește un filtru Supabase de tip "OR ilike" pe mai multe
-      // coloane, pentru căutare server-side. Întoarce null dacă termenul e
-      // gol (caz în care niciun filtru nu trebuie aplicat interogării).
       function buildSearchOrFilter(term, columns) {
         const t = (term || "").trim();
         if (!t) return null;
-        // Virgula și parantezele au sens special în sintaxa .or() din
-        // PostgREST — le eliminăm din termenul căutat ca să nu spargă
-        // filtrul construit mai jos.
+
         const curatat = t.replace(/[(),]/g, " ").trim();
         if (!curatat) return null;
         const escapat = curatat.replace(/[%_]/g, (m) => "\\" + m);
         return columns.map((c) => `${c}.ilike.%${escapat}%`).join(",");
       }
 
-      // ------------------------------------------------------------------
-      // UTIL
-      // ------------------------------------------------------------------
       function esc(str) {
         if (str === null || str === undefined) return "";
         return String(str).replace(
@@ -308,9 +270,6 @@
         return `<span class="role-pill ${cls}">${label}</span>`;
       }
 
-      // ------------------------------------------------------------------
-      // BOOTSTRAP — verifică sesiunea existentă și ascultă schimbări
-      // ------------------------------------------------------------------
       supa.auth.onAuthStateChange((event, session) => {
         if (event === "PASSWORD_RECOVERY") {
           recoveryMode = true;
@@ -349,11 +308,6 @@
         }
       })();
 
-      // ==================================================================
-      // ECRAN DE CONFIRMARE MANUALĂ (email verificare / resetare parolă)
-      // Necesită un click explicit înainte de a valida tokenul, ca linkul
-      // să nu fie "consumat" automat de scanerele anti-phishing ale emailurilor.
-      // ==================================================================
       function renderConfirmScreen(tokenHash, type) {
         const isRecovery = type === "recovery";
         app.innerHTML = `
@@ -381,7 +335,6 @@
               type,
             });
 
-            // curăță parametrii din URL, ca linkul să nu mai poată fi refolosit din istoric
             window.history.replaceState(
               {},
               document.title,
@@ -420,9 +373,6 @@
         renderShell();
       }
 
-      // ==================================================================
-      // ECRAN AUTENTIFICARE (Autentificare / Cont nou / Am uitat parola)
-      // ==================================================================
       function renderAuthScreen(mode = "login") {
         app.innerHTML = `
   <div class="min-h-screen flex items-center justify-center px-4" style="background:radial-gradient(circle at 20% 20%, #1B2430 0%, #0E1318 65%);">
@@ -580,9 +530,6 @@
           });
       }
 
-      // ==================================================================
-      // ECRAN MODIFICARE PAROLĂ (după click pe linkul din email)
-      // ==================================================================
       function renderResetPassword() {
         app.innerHTML = `
   <div class="min-h-screen flex items-center justify-center px-4" style="background:radial-gradient(circle at 20% 20%, #1B2430 0%, #0E1318 65%);">
@@ -633,9 +580,6 @@
           });
       }
 
-      // ==================================================================
-      // SHELL APLICAȚIE (după autentificare)
-      // ==================================================================
       function renderShell() {
         if (!currentProfile) {
           renderPendingRole();
@@ -812,9 +756,6 @@
         dispatchTab(key);
       }
 
-      // Randează conținutul tab-ului curent (key) în #page-content. Extrasă
-      // separat de openTab ca să poată fi rechemată și de câmpul de căutare
-      // (care nu trebuie să reseteze titlul, meniul sau focusul din header).
       function dispatchTab(key) {
         const content = document.getElementById("page-content");
         if (key === "utilizatori") {
@@ -855,10 +796,6 @@
         }
       }
 
-      // Leagă (sau re-leagă, la schimbarea tab-ului) câmpul de căutare din
-      // header de tab-ul curent — valoarea afișată vine din termenul salvat
-      // pentru acel tab, iar tastarea (cu debounce) re-randează doar
-      // #page-content, cu o interogare Supabase filtrată server-side.
       function bindGlobalSearch() {
         const input = document.getElementById("global-search-input");
         if (!input) return;
@@ -873,9 +810,6 @@
         };
       }
 
-      // ==================================================================
-      // MODAL SCHIMBARE PAROLĂ (utilizator autentificat, fără parola veche)
-      // ==================================================================
       function renderChangePasswordModal() {
         const overlay = document.createElement("div");
         overlay.id = "change-pass-overlay";
@@ -933,9 +867,6 @@
           });
       }
 
-      // ==================================================================
-      // MODAL ADRESĂ DE FACTURARE (pentru conturi de tip magazin)
-      // ==================================================================
       function renderBillingAddressModal(p, billingBtn) {
         const overlay = document.createElement("div");
         overlay.id = "billing-address-overlay";
@@ -1028,9 +959,6 @@
           });
       }
 
-      // ==================================================================
-      // ADMINISTRARE UTILIZATORI (admin / superadmin)
-      // ==================================================================
       async function renderUserAdmin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
 
@@ -1199,41 +1127,17 @@
   </tr>`;
       }
 
-      // ==================================================================
-      // DEPOZIT CENTRAL (admin / superadmin) — stoc produse (vehicule electrice)
-      // ==================================================================
-      //
-      // Migrare SQL necesară (o singură dată, în Supabase SQL editor) pentru
-      // câmpurile noi "Preț Recomandat" și "Discount" adăugate produsului:
-      //
-      //   alter table produse add column if not exists pret_recomandat numeric;
-      //   alter table produse add column if not exists discount numeric default 0;
-      //
-      // Migrare SQL necesară (o singură dată) pentru cerința din sarcini2.md
-      // — tip discount (sumă/procent):
-      //
-      //   alter table produse add column if not exists discount_tip text default 'suma';
-      //
       const CATEGORII_PRODUS = [
         "Bicicletă electrică",
         "Tricicletă electrică",
         "Scuter electric",
         "Cvadriciclu electric",
       ];
-      // Valoare specială folosită în selectul "Magazin" al comenzii noi
-      // pentru opțiunea "Vânzare directă" (disponibilă doar pentru
-      // admin/superadmin, invizibilă agenților). Nu este un id de magazin
-      // real — comanda/produsul rezultat rămân cu magazin_id = null și
-      // primesc marcajul vanzare_directa = true.
-      const VANZARE_DIRECTA = "__vanzare_directa__";
-      // TVA_RATE este acum editabilă din interfață (tab "Depozit central") și
-      // persistată în tabelul Supabase `setari_aplicatie` (rând unic, id=1).
-      // Valoarea de mai jos este doar un fallback până la încărcarea reală.
-      let TVA_RATE = 0.19;
 
-      // Încarcă procentul de TVA curent din Supabase. Dacă tabelul nu există
-      // încă sau apare o eroare, se păstrează valoarea implicită de mai sus,
-      // fără a bloca restul aplicației.
+      const VANZARE_DIRECTA = "__vanzare_directa__";
+
+      let TVA_RATE = 0.21;
+
       async function loadTvaRate() {
         try {
           const { data, error } = await supa
@@ -1244,14 +1148,10 @@
           if (!error && data && typeof data.tva_procent === "number") {
             TVA_RATE = data.tva_procent / 100;
           }
-        } catch (e) {
-          // Tabelul de setări nu există încă — se folosește valoarea implicită.
-        }
+        } catch (e) {}
         return TVA_RATE;
       }
 
-      // Salvează un nou procent de TVA (ex: 21 pentru 21%) în Supabase și
-      // actualizează valoarea folosită în calculele curente ale sesiunii.
       async function saveTvaRate(procent) {
         const { error } = await supa.from("setari_aplicatie").upsert({
           id: 1,
@@ -1278,9 +1178,6 @@
         return Number(n).toFixed(2);
       }
 
-      // Returnează lista valorilor distincte, deja folosite, din coloana
-      // "marca" a produselor — folosită pentru autocompletarea câmpului Marcă,
-      // la fel ca la Agent/Magazin (sugestii selectabile, dar text liber permis).
       function distinctMarci(produse) {
         const set = new Set();
         (produse || []).forEach((p) => {
@@ -1289,10 +1186,6 @@
         return Array.from(set).sort((a, b) => a.localeCompare(b, "ro"));
       }
 
-      // Construiește o hartă marcă → categorie pe baza produselor deja
-      // existente în stoc (categoria cea mai frecventă asociată acelei
-      // mărci). Folosită pentru autocompletarea categoriei în modalul
-      // "Comandă nouă" atunci când se alege/scrie marca produsului.
       function buildMarcaCategorieMap(produse) {
         const counts = {};
         (produse || []).forEach((p) => {
@@ -1316,10 +1209,6 @@
         return map;
       }
 
-      // Atașează căutare live (autocomplete) unui câmp text: pe măsură ce se
-      // tastează, afișează sub câmp potrivirile din lista de nume; la click
-      // pe o sugestie, aceasta este inscrisă integral în câmp. Dacă nu există
-      // potriviri, numele poate fi introdus manual în întregime.
       function attachAgentAutocomplete(inputEl, listEl, names, onChange) {
         function renderMatches() {
           const q = inputEl.value.trim().toLowerCase();
@@ -1363,9 +1252,6 @@
         });
       }
 
-      // Variantă a căutării live pentru câmpul Magazin: potrivirile provin din
-      // profilurile de tip magazin, iar la selectare se reține și id-ul
-      // magazinului (necesar pentru asocierea produsului), nu doar eticheta.
       function attachMagazinAutocomplete(
         inputEl,
         listEl,
@@ -1430,14 +1316,6 @@
         });
       }
 
-      // Leagă câmpurile de preț (Preț intrare / Adaos / Preț vânzare / Alte
-      // costuri / Total / Preț cu TVA) conform regulii dorite:
-      // - completarea "Preț de intrare" NU autocompletează Adaos sau Preț vânzare;
-      // - completarea "Adaos" adaptează "Preț vânzare" = Preț intrare + Adaos;
-      // - completarea "Preț vânzare" adaptează "Adaos" = Preț vânzare - Preț intrare;
-      // - "Total fără TVA" și "Preț cu TVA" se calculează automat din Preț
-      //   vânzare + Alte costuri, dar rămân necompletate cât timp Preț vânzare
-      //   este gol.
       function attachPriceAutoCalc({
         intrareInput,
         vanzareInput,
@@ -1460,8 +1338,7 @@
           const discount = discountInput
             ? parseFloat(discountInput.value) || 0
             : 0;
-          // "suma": discountul e o valoare fixă scăzută direct din total;
-          // "procent": comportamentul vechi (procent scăzut din total).
+
           const discountTip = discountTipInput
             ? discountTipInput.value
             : "procent";
@@ -1497,9 +1374,6 @@
         return { updateTotalTva };
       }
 
-      // Construiește harta magazin_id -> nume agent asignat, folosită pentru
-      // a completa automat câmpul "Agent" atunci când un produs este
-      // trimis/realocat către un magazin care are deja un agent asociat.
       function buildAgentMagazinMap(asocieri, agenti) {
         const map = new Map();
         (asocieri || []).forEach((a) => {
@@ -1510,9 +1384,6 @@
         return map;
       }
 
-      // Construiește harta produs_id -> comanda din care a fost trimis
-      // produsul, folosită pentru a afișa numărul comenzii lângă ID-ul
-      // produsului trimis și a permite deschiderea comenzii inițiale.
       function buildProdusComandaMap(linii, comenzi) {
         const comenziMap = new Map((comenzi || []).map((c) => [c.id, c]));
         const map = new Map();
@@ -1528,8 +1399,6 @@
         return map;
       }
 
-      // Deschide modalul (doar vizualizare) al comenzii inițiale a unui
-      // produs trimis către un magazin.
       function deschideComandaInitiala(comanda, linii, profiles) {
         renderComandaReadonlyModal(
           comanda,
@@ -1538,9 +1407,6 @@
         );
       }
 
-      // Randează antetul de tabel + rândurile pentru o listă de produse,
-      // în formatul complet (toate coloanele editabile) folosit atât pentru
-      // stocul disponibil, cât și pentru produsele trimise către magazine.
       function renderProductsTableHtml(
         lista,
         agenti,
@@ -1568,6 +1434,7 @@
             <th class="px-3 py-3 font-medium">Total fără TVA</th>
             <th class="px-3 py-3 font-medium">Preț cu TVA</th>
             <th class="px-3 py-3 font-medium">Preț Recomandat</th>
+            <th class="px-3 py-3 font-medium">C.I.V.</th>
             <th class="px-3 py-3 font-medium">Magazin</th>
             <th class="px-3 py-3 font-medium">Telefon</th>
             <th class="px-3 py-3 font-medium">Adresă facturare</th>
@@ -1590,7 +1457,6 @@
     </div>`;
       }
 
-      // Tab 1 — Stocul depozitului central (comportament neschimbat).
       function renderStocSubtab(
         container,
         stocDisponibil,
@@ -1619,12 +1485,6 @@
           });
       }
 
-      // Tab 2 — Produsele trimise către magazine, în forma completă (toate
-      // coloanele editabile) din "Depozit central". Un produs poate fi
-      // rechemat/realocat schimbând magazinul din câmpul dedicat și apăsând
-      // "Salvează" — dispare din stocul magazinului inițial și apare în cel
-      // al magazinului nou ales, cu data comenzii, telefonul, adresa de
-      // facturare (și agentul, dacă magazinul are unul asociat) actualizate.
       function renderTrimiseSubtab(
         container,
         produseTrimise,
@@ -1658,10 +1518,6 @@
         );
       }
 
-      // Încarcă datele comune folosite atât de tab-ul "Depozit central"
-      // (stocul disponibil) cât și de tab-ul independent "Produse trimise
-      // către magazine" — extras dintr-o singură funcție ca să nu se
-      // dubleze interogările către Supabase.
       async function loadDepozitData() {
         const termenCautare = tabSearchTerms[currentTabKey] || "";
         let produseQuery = supa
@@ -1721,10 +1577,6 @@
           profiles: profiles || [],
         };
 
-        // Produsele deja trimise către un magazin sau marcate "Vânzare
-        // directă" (comandă onorată sau alocare manuală) nu mai fac parte
-        // din stocul disponibil — sunt afișate în tab-ul separat "Produse
-        // trimise către magazine".
         const stocDisponibil = (produse || []).filter(
           (p) => !p.magazin_id && !p.vanzare_directa,
         );
@@ -1732,8 +1584,6 @@
           (p) => (p.magazin_id || p.vanzare_directa) && !p.vandut,
         );
 
-        // Produse legate de o linie de comandă "pregătită" (rezervate), dar
-        // încă netrimise — trebuie marcate distinct în lista de stoc.
         const reservedIds = new Set(
           (linii || [])
             .filter((l) => l.status_linie === "asignat" && l.produs_id)
@@ -1756,9 +1606,6 @@
         };
       }
 
-      // TAB "Depozit central" — doar stocul disponibil al depozitului +
-      // controlul cotei de TVA. "Produse trimise către magazine" este acum
-      // un meniu independent (vezi renderProduseTrimiseTab).
       async function renderDepozitCentral(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         const d = await loadDepozitData();
@@ -1813,7 +1660,6 @@
           });
       }
 
-      // TAB independent "Produse trimise către magazine".
       async function renderProduseTrimiseTab(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         const d = await loadDepozitData();
@@ -1894,6 +1740,7 @@
     <td class="px-3 py-3"><input type="number" step="0.01" data-field="total_fara_tva" value="${p.total_fara_tva ?? ""}" class="calc-input total-input border rounded-md px-2 py-1.5 text-xs w-24 font-medium"></td>
     <td class="px-3 py-3"><input type="number" step="0.01" data-field="pret_cu_tva" value="${p.pret_cu_tva ?? ""}" class="calc-input tva-input border rounded-md px-2 py-1.5 text-xs w-24 font-medium"></td>
     <td class="px-3 py-3"><input type="number" step="0.01" data-field="pret_recomandat" value="${p.pret_recomandat ?? ""}" class="border rounded-md px-2 py-1.5 text-xs w-24"></td>
+    <td class="px-3 py-3 text-xs">${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</td>
     <td class="px-3 py-3">
       <div class="relative">
         <input type="text" class="magazin-input border rounded-md px-2 py-1.5 text-xs w-28" placeholder="— (la vânzare)" autocomplete="off" value="${esc(currentMagazinLabel)}">
@@ -2002,8 +1849,7 @@
             telefonCell.textContent = m ? m.telefon || "—" : "—";
             adresaCell.textContent = m ? m.adresa_facturare || "—" : "—";
             adresaCell.title = m ? m.adresa_facturare || "" : "";
-            // La alegerea unui magazin care are deja un agent asociat,
-            // completează automat câmpul Agent (poate fi suprascris manual).
+
             if (m && agentMagazinMap.has(m.id)) {
               agentInput.value = agentMagazinMap.get(m.id);
             }
@@ -2043,19 +1889,13 @@
             const magazinId = magazinIdInput.value || null;
             const magazinInputVal = magazinInput.value.trim();
             const magazinProfil = magazine.find((m) => m.id === magazinId);
-            // Câmpul "Magazin" a fost golit (nici id, nici text) — folosit
-            // și pentru cazul "Vânzare directă", unde magazin_id era deja
-            // null, deci simpla comparație de id nu ar detecta schimbarea.
+
             const campMagazinGolit = !magazinId && !magazinInputVal;
-            // Reasignare/realocare: magazinul (sau marcajul "Vânzare directă")
-            // s-a schimbat față de cel salvat anterior.
+
             const magazinSchimbat =
               magazinId !== (p.magazin_id || null) ||
               (!!p.vanzare_directa && campMagazinGolit);
-            // Retragere: produsul era deja trimis (magazin real sau "Vânzare
-            // directă") și acum câmpul "Magazin" a fost golit și salvat —
-            // produsul revine în stocul depozitului central, iar mențiunea
-            // "Trimis" de pe comanda inițială devine "Realocat".
+
             const eraTrimis = !!(p.magazin_id || p.vanzare_directa);
             const esteRetragere = campMagazinGolit && eraTrimis;
 
@@ -2088,17 +1928,13 @@
                   : p.adresa_facturare || null,
               updated_at: new Date().toISOString(),
             };
-            // La orice schimbare a câmpului Magazin (alegere de magazin nou
-            // sau golire), produsul nu mai este o "Vânzare directă" — acel
-            // marcaj se aplică doar prin fluxul de onorare a comenzii.
+
             if (magazinSchimbat) {
               payload.vanzare_directa = false;
             }
             if (esteRetragere) {
               payload.data_comenzii = null;
             } else if (magazinId && magazinSchimbat) {
-              // Data comenzii se actualizează la prima trimitere și la orice
-              // realocare ulterioară către un magazin diferit.
               payload.data_comenzii = new Date().toISOString().slice(0, 10);
             }
 
@@ -2115,9 +1951,6 @@
             }
 
             if (esteRetragere) {
-              // Comanda inițială care a trimis acest produs către magazin
-              // este marcată acum "Realocat" în loc de "Trimis", iar
-              // statusul general al comenzii este recalculat.
               const { data: liniiRealocate } = await supa
                 .from("comanda_produse")
                 .update({ status_linie: "realocat" })
@@ -2148,8 +1981,6 @@
             Object.assign(p, payload);
             toast("Produs salvat cu succes.");
             if (magazinSchimbat) {
-              // Produsul tocmai a fost trimis/realocat/retras — se mută (sau
-              // se schimbă) secțiunea în care apare.
               refresh();
               return;
             }
@@ -2185,9 +2016,6 @@
           });
       }
 
-      // ==================================================================
-      // MODAL ADĂUGARE PRODUS NOU (depozit central)
-      // ==================================================================
       function renderAddProductModal(
         agenti,
         onSaved,
@@ -2215,7 +2043,7 @@
         <h2 class="text-lg font-bold">Adaugă produs nou</h2>
         <button type="button" id="add-produs-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
       </div>
-      <p class="text-sm text-slate-500 mb-5">Produsul va fi adăugat în stocul depozitului central.</p>
+      <p class="text-sm text-slate-500 mb-5"></p>
       <form id="form-add-produs" class="space-y-4">
         <div>
           ${fieldLabel("ID produs")}
@@ -2258,10 +2086,10 @@
         </div>
         <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
           <div>${fieldLabel("Adaos")}<input type="number" step="0.01" id="add-adaos" class="${inputBase()} calc-field font-semibold"></div>
-          <div>${fieldLabel("Alte costuri fără TVA")}<input type="number" step="0.01" id="add-alte-costuri" class="${inputBase()} price-field" value="0"></div>
+          <div>${fieldLabel("Alte costuri (fără TVA)")}<input type="number" step="0.01" id="add-alte-costuri" class="${inputBase()} price-field" value="0"></div>
         </div>
         <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
-          <div>${fieldLabel("Total fără TVA")}<input type="number" step="0.01" id="add-total" class="${inputBase()} calc-field font-semibold"></div>
+          <div>${fieldLabel("Total(fără TVA)")}<input type="number" step="0.01" id="add-total" class="${inputBase()} calc-field font-semibold"></div>
           <div>${fieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="add-tva" class="${inputBase()} calc-field font-semibold"></div>
         </div>
         <div class="grid grid-cols-2 gap-3">
@@ -2278,7 +2106,17 @@
             <input type="hidden" id="add-discount-tip" value="suma">
           </div>
         </div>
-        <p class="text-xs text-slate-400">Data comenzii, magazinul, telefonul și adresa de facturare se completează automat la vânzarea produsului.</p>
+        <div>
+          <div class="flex items-center justify-between">
+            <label class="block text-sm font-medium text-slate-700">C.I.V.</label>
+            <div class="flex gap-1">
+              <button type="button" data-civ="nu" class="add-civ-btn rounded-md px-3 py-2 text-xs font-medium border btn-primary" style="border-color:var(--line)">Nu</button>
+              <button type="button" data-civ="da" class="add-civ-btn rounded-md px-3 py-2 text-xs font-medium border" style="border-color:var(--line)">Da</button>
+            </div>
+          </div>
+          <input type="hidden" id="add-civ" value="nu">
+        </div>
+        <p class="text-xs text-slate-400"></p>
         <div class="flex gap-2 pt-1">
           <button type="button" id="add-produs-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
           <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Salvează produsul</button>
@@ -2359,6 +2197,16 @@
           });
         });
 
+        const addCiv = document.getElementById("add-civ");
+        overlay.querySelectorAll(".add-civ-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            addCiv.value = btn.dataset.civ;
+            overlay
+              .querySelectorAll(".add-civ-btn")
+              .forEach((b) => b.classList.toggle("btn-primary", b === btn));
+          });
+        });
+
         document
           .getElementById("form-add-produs")
           .addEventListener("submit", async (e) => {
@@ -2395,6 +2243,7 @@
             const discountVal = addDiscount.value.trim()
               ? parseFloat(addDiscount.value)
               : 0;
+            const civVal = addCiv.value === "da";
 
             btn.disabled = true;
             btn.textContent = "Se salvează...";
@@ -2419,6 +2268,7 @@
                 pret_recomandat: pretRecomandat,
                 discount: discountVal,
                 discount_tip: addDiscountTip.value,
+                civ: civVal,
                 created_by: currentUser.id,
               })
               .select()
@@ -2439,10 +2289,6 @@
           });
       }
 
-      // ==================================================================
-      // MODAL EDITARE PRODUS (deschis la click pe ID produs)
-      // Aceleași câmpuri ca la introducere, precompletate cu datele curente.
-      // ==================================================================
       function renderEditProductModal(p, agenti, magazine, onSaved, marci) {
         const overlay = document.createElement("div");
         overlay.id = "edit-produs-overlay";
@@ -2463,7 +2309,7 @@
         <h2 class="text-lg font-bold">Editează produsul</h2>
         <button type="button" id="edit-produs-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
       </div>
-      <p class="text-sm text-slate-500 mb-5">Modifică datele produsului din stocul depozitului central.</p>
+      <p class="text-sm text-slate-500 mb-5">Modifică datele produsului.</p>
       <form id="form-edit-produs" class="space-y-4">
         <div>
           ${fieldLabel("ID produs")}
@@ -2506,10 +2352,10 @@
         </div>
         <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
           <div>${fieldLabel("Adaos")}<input type="number" step="0.01" id="edit-adaos" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.adaos)}"></div>
-          <div>${fieldLabel("Alte costuri fără TVA")}<input type="number" step="0.01" id="edit-alte-costuri" class="${inputBase()} price-field" value="${p.alte_costuri ?? 0}"></div>
+          <div>${fieldLabel("Alte costuri (fără TVA)")}<input type="number" step="0.01" id="edit-alte-costuri" class="${inputBase()} price-field" value="${p.alte_costuri ?? 0}"></div>
         </div>
         <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
-          <div>${fieldLabel("Total fără TVA")}<input type="number" step="0.01" id="edit-total" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.total_fara_tva)}"></div>
+          <div>${fieldLabel("Total (fără TVA)")}<input type="number" step="0.01" id="edit-total" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.total_fara_tva)}"></div>
           <div>${fieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="edit-tva" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.pret_cu_tva)}"></div>
         </div>
         <div class="grid grid-cols-2 gap-3">
@@ -2525,6 +2371,16 @@
             <input type="number" step="0.01" min="0" id="edit-discount" class="${inputBase()}" value="${p.discount ?? 0}">
             <input type="hidden" id="edit-discount-tip" value="${p.discount_tip || "suma"}">
           </div>
+        </div>
+        <div>
+          <div class="flex items-center justify-between">
+            <label class="block text-sm font-medium text-slate-700">C.I.V.</label>
+            <div class="flex gap-1">
+              <button type="button" data-civ="nu" class="edit-civ-btn rounded-md px-3 py-2 text-xs font-medium border ${!p.civ ? "btn-primary" : ""}" style="border-color:var(--line)">Nu</button>
+              <button type="button" data-civ="da" class="edit-civ-btn rounded-md px-3 py-2 text-xs font-medium border ${p.civ ? "btn-primary" : ""}" style="border-color:var(--line)">Da</button>
+            </div>
+          </div>
+          <input type="hidden" id="edit-civ" value="${p.civ ? "da" : "nu"}">
         </div>
         <div class="flex gap-2 pt-1">
           <button type="button" id="edit-produs-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
@@ -2606,6 +2462,16 @@
           });
         });
 
+        const editCiv = document.getElementById("edit-civ");
+        overlay.querySelectorAll(".edit-civ-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            editCiv.value = btn.dataset.civ;
+            overlay
+              .querySelectorAll(".edit-civ-btn")
+              .forEach((b) => b.classList.toggle("btn-primary", b === btn));
+          });
+        });
+
         document
           .getElementById("form-edit-produs")
           .addEventListener("submit", async (e) => {
@@ -2646,6 +2512,7 @@
             const discountVal = editDiscount.value.trim()
               ? parseFloat(editDiscount.value)
               : 0;
+            const civVal = editCiv.value === "da";
 
             btn.disabled = true;
             btn.textContent = "Se salvează...";
@@ -2669,6 +2536,7 @@
                 pret_recomandat: pretRecomandat,
                 discount: discountVal,
                 discount_tip: editDiscountTip.value,
+                civ: civVal,
                 updated_at: new Date().toISOString(),
               })
               .eq("id", p.id);
@@ -2687,10 +2555,6 @@
           });
       }
 
-      // ==================================================================
-      // COMENZI — flux Agent (sau Admin manual) → Admin pregătește/leagă
-      // produse din stoc → trimite produsele pregătite către Magazin.
-      // ==================================================================
       const STATUS_COMANDA_LABEL = {
         in_asteptare: "În așteptare",
         partial_onorata: "Parțial onorată",
@@ -2709,11 +2573,6 @@
         return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium ${cls}">${esc(STATUS_COMANDA_LABEL[status] || status)}</span>`;
       }
 
-      // ------------------------------------------------------------------
-      // Filtru pe status pentru tab-ul "Comenzi" (toate rolurile). Permite
-      // selectarea a până la două statusuri simultan; "Toate" resetează
-      // selecția. Starea se păstrează cât timp tab-ul rămâne deschis.
-      // ------------------------------------------------------------------
       const COMANDA_FILTER_STATUSES = [
         { key: "in_asteptare", label: "În așteptare" },
         { key: "partial_onorata", label: "Parțial onorată" },
@@ -2755,13 +2614,10 @@
         });
       }
 
-      // Statusul afișat/filtrabil al unei comenzi (ține cont de anulare).
       function comandaStatusFiltrabil(c, lines) {
         return c.status === "anulata" ? "anulata" : computeComandaStatus(lines);
       }
 
-      // Aplică filtrul curent (comenziStatusFilter) pe o listă de comenzi,
-      // folosind liniile fiecăreia pentru a-i calcula statusul afișat.
       function filtreazaComenziDupaStatus(comenzi, linii) {
         if (!comenziStatusFilter.length) return comenzi;
         return comenzi.filter((c) => {
@@ -2780,9 +2636,6 @@
         return "Neasignat";
       }
 
-      // Un produs din stoc "se potrivește" cu o linie de comandă dacă
-      // respectă categoria/marca/culoarea cerute pe linia respectivă
-      // (câmpurile necompletate pe linie nu restricționează potrivirea).
       function produsMatchesLinie(p, l) {
         if (l.categorie && p.categorie !== l.categorie) return false;
         if (
@@ -2800,10 +2653,6 @@
         return true;
       }
 
-      // Produsele din stocul central încă neasignate unui magazin și
-      // nerezervate de altă linie de comandă (opțional se exclude o linie,
-      // de regulă linia curentă, pentru a nu se auto-exclude produsul deja
-      // legat de ea).
       function stocDisponibilPentruComenzi(context, excludeLinieId) {
         const reserved = new Set(
           (context.allLinii || [])
@@ -2815,9 +2664,6 @@
         );
       }
 
-      // Dacă linia este încă "Neasignată", caută dacă există deja un produs
-      // disponibil pe stocul central care se potrivește cerinței — folosit
-      // pentru a afișa mențiunea "Pe stoc" în locul statusului "Neasignat".
       function findMatchingStockProduct(l, context) {
         if (l.produs_id) return null;
         const disponibile = stocDisponibilPentruComenzi(context, l.id);
@@ -2833,12 +2679,6 @@
         return "in_asteptare";
       }
 
-      // Numărul de comandă are formatul C{AA}-XXXX, unde AA sunt ultimele
-      // două cifre ale anului curent (ex: C26-0001 în 2026, C27-0001 în
-      // 2027 ș.a.m.d.), iar XXXX este un număr de ordine (0001-9999) care
-      // repornește de la 1 în fiecare an nou. Comenzile din anii anteriori
-      // (fie cu prefixul vechi "COM-", fie cu un prefix "C{AA}-" diferit)
-      // nu sunt luate în calcul la determinarea următorului număr.
       async function nextOrderNumber() {
         const sufixAn = String(new Date().getFullYear()).slice(-2);
         const prefix = `C${sufixAn}-`;
@@ -2853,12 +2693,6 @@
         return prefix + String(max + 1).padStart(4, "0");
       }
 
-      // Inserează o comandă nouă generând numărul de comandă (C{AA}-XXXX).
-      // Dacă două trimiteri aproape simultane calculează același număr
-      // "următor" (condiție de cursă client-side), inserarea a doua eșuează
-      // cu eroare de constrângere UNIQUE pe numar_comanda. În acest caz se
-      // recalculează automat un număr nou (proaspăt, ținând cont de comanda
-      // deja salvată) și se reîncearcă, fără ca eroarea să ajungă la utilizator.
       async function insertComandaCuNumarUnic(
         payloadFaraNumar,
         maxIncercari = 5,
@@ -2880,12 +2714,10 @@
           if (!esteDuplicatNumarComanda) {
             return { data: null, error, numarComanda: null };
           }
-          // Altfel: se reîncearcă automat cu un număr recalculat.
         }
         return { data: null, error: ultimaEroare, numarComanda: null };
       }
 
-      // Editor reutilizabil pentru liniile (produsele cerute) unei comenzi noi.
       function renderComandaLinesEditor(
         containerEl,
         marci,
@@ -2952,9 +2784,6 @@
             div.querySelector(".line-marca-suggestions"),
             marci || [],
             (marcaVal) => {
-              // Autocompletează categoria corespunzătoare mărcii, dar doar
-              // dacă utilizatorul nu a ales deja o categorie pe această
-              // linie (nu suprascrie o alegere explicită).
               const catAlreadySet =
                 (!catAltaWrap.classList.contains("hidden") &&
                   catAlta.value.trim()) ||
@@ -3023,10 +2852,6 @@
         };
       }
 
-      // ------------------------------------------------------------------
-      // MODAL: comandă nouă (folosit de Agent pentru el însuși, sau de Admin
-      // care introduce manual o comandă telefonică pentru un agent fără cont)
-      // ------------------------------------------------------------------
       function renderNewComandaModal(mode, context, onSaved) {
         const overlay = document.createElement("div");
         overlay.id = "new-comanda-overlay";
@@ -3125,10 +2950,6 @@
           .getElementById("comanda-add-line")
           .addEventListener("click", () => editor.addLineRow());
 
-        // "Vezi disponibilitate în stocul central" — listă derulabilă cu
-        // produsele încă neasignate/nerezervate; un click pe o linie
-        // adaugă un rând nou în "Produse cerute" cu categorie/marcă/culoare
-        // preluate din produsul ales.
         const stocDisponibilComanda = stocDisponibilPentruComenzi(
           { produse: context.produse || [], allLinii: context.allLinii || [] },
           null,
@@ -3160,7 +2981,7 @@
                 .map(
                   (p) => `
         <button type="button" data-stoc-produs="${p.id}" class="w-full text-left border rounded-md px-2.5 py-1.5 text-xs hover:bg-slate-50 flex items-center justify-between gap-2" style="border-color:var(--line)">
-          <span>${esc(p.categorie || "—")} · ${esc(p.marca || "—")} · ${esc(p.culoare || "—")}</span>
+          <span>${esc(p.categorie || "—")} · ${esc(p.marca || "—")} · ${esc(p.culoare || "—")} · C.I.V.: ${p.civ ? "Da" : "Nu"}</span>
           <span class="font-semibold whitespace-nowrap">${p.pret_cu_tva !== null && p.pret_cu_tva !== undefined ? fmtNum(p.pret_cu_tva) + " lei" : "—"}</span>
         </button>`,
                 )
@@ -3291,9 +3112,6 @@
           });
       }
 
-      // ------------------------------------------------------------------
-      // Card scurt pentru o comandă (folosit în toate listele: admin/agent/magazin)
-      // ------------------------------------------------------------------
       function comandaCard(c, lines, magazine) {
         const m = magazine.find((x) => x.id === c.magazin_id);
         const magazinLabel = m
@@ -3316,10 +3134,6 @@
   </div>`;
       }
 
-      // ------------------------------------------------------------------
-      // MODAL: alege un produs existent (neasignat, nerezervat) din stoc
-      // pentru a-l lega de o linie de comandă.
-      // ------------------------------------------------------------------
       function renderPickProductModal(l, context, onPick) {
         const overlay = document.createElement("div");
         overlay.id = "pick-produs-overlay";
@@ -3327,9 +3141,6 @@
           "fixed inset-0 z-50 flex items-center justify-center px-4 py-8 overflow-y-auto";
         overlay.style.background = "rgba(15,20,25,0.55)";
 
-        // Produsele care se potrivesc exact cerinței liniei (categorie,
-        // marcă, culoare) sunt afișate primele în listă — sunt cele mai
-        // probabil de ales și corespund mențiunii "Pe stoc".
         const available = stocDisponibilPentruComenzi(context, l.id).sort(
           (a, b) => {
             const am = produsMatchesLinie(a, l) ? 0 : 1;
@@ -3375,6 +3186,7 @@
       <button type="button" data-pick="${p.id}" class="pick-produs-item w-full text-left border rounded-lg px-3 py-2 text-sm hover:bg-slate-50" style="border-color:var(--line)">
         <div class="font-medium">${esc(p.categorie || "—")} · ${esc(p.marca || "—")} · ${esc(p.culoare || "—")}</div>
         <div class="text-xs text-slate-400 font-mono">${esc(p.id_produs)}${p.vin ? " · VIN " + esc(p.vin) : ""}</div>
+        <div class="text-xs mt-1">C.I.V.: ${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</div>
       </button>`,
             )
             .join("");
@@ -3392,24 +3204,17 @@
           .addEventListener("input", (e) => paint(e.target.value));
       }
 
-      // ------------------------------------------------------------------
-      // O linie din detaliul comenzii (varianta editabilă, pentru Admin)
-      // ------------------------------------------------------------------
       function comandaLineRow(l, context) {
         const produs = l.produs_id
           ? context.produse.find((p) => p.id === l.produs_id)
           : null;
-        // Doar Admin/Superadmin pot lega/crea produse reale din stoc;
-        // Agentul poate doar adăuga/șterge liniile cerute din comandă.
+
         const canManageStock =
           currentProfile.role === "admin" ||
           currentProfile.role === "superadmin";
         const canManageLines =
           canManageStock || currentProfile.role === "agent";
-        // Pentru o linie încă neasignată, dacă există deja un produs
-        // potrivit pe stocul central, se afișează "Pe stoc" în loc de
-        // "Neasignat" (produsul propriu-zis se leagă tot manual, din
-        // "Leagă produs").
+
         const arePeStoc = !produs && !!findMatchingStockProduct(l, context);
         const statusText = arePeStoc
           ? "Pe stoc"
@@ -3559,14 +3364,6 @@
         }
       }
 
-      // ------------------------------------------------------------------
-      // MODAL: detaliul unei comenzi, cu drept de editare (Admin/Superadmin)
-      //
-      // NOTĂ — migrare SQL necesară (o singură dată), neaplicată încă:
-      //   alter table comanda_produse add column if not exists data_trimis timestamptz;
-      // Reține data/ora la care linia a fost trimisă către magazin, afișată
-      // mărunt sub eticheta "Trimis".
-      // ------------------------------------------------------------------
       function renderComandaDetailModal(c, lines, context, onSaved) {
         const overlay = document.createElement("div");
         overlay.id = "comanda-detail-overlay";
@@ -3647,8 +3444,7 @@
               lines,
             ),
           );
-          // Comanda "Onorată" (toate liniile trimise) nu mai permite
-          // adăugarea de produse noi.
+
           const comandaEsteOnorata =
             lines.length > 0 && computeComandaStatus(lines) === "onorata";
           if (addProdusWrap)
@@ -3758,7 +3554,6 @@
             onSaved();
           });
 
-        // Super admin: ștergere definitivă imediată, cu dublă confirmare.
         const btnSterge = document.getElementById("comanda-sterge");
         if (btnSterge) {
           btnSterge.addEventListener("click", async () => {
@@ -3778,8 +3573,6 @@
           });
         }
 
-        // Admin: doar solicită ștergerea; devine efectivă abia după
-        // aprobarea unui Super admin, din tab-ul "Aprobări".
         const btnCereStergere = document.getElementById(
           "comanda-cere-stergere",
         );
@@ -3804,11 +3597,6 @@
         }
       }
 
-      // ------------------------------------------------------------------
-      // MODAL: adaugă rapid un produs (linie) nou într-o comandă existentă
-      // (Admin/Superadmin/Agent) — reutilizează editorul de linii de la
-      // "Comandă nouă", dar salvează o singură linie direct în DB.
-      // ------------------------------------------------------------------
       function renderAddLinieComandaModal(marci, marcaCategorieMap, onAdd) {
         const overlay = document.createElement("div");
         overlay.id = "add-linie-comanda-overlay";
@@ -3852,8 +3640,7 @@
               return;
             }
             overlay.remove();
-            // Fiecare unitate din cantitate devine o linie separată,
-            // exact ca la crearea unei comenzi noi.
+
             for (const l of lines) {
               for (let i = 0; i < l.cantitate; i++) {
                 await onAdd({
@@ -3867,9 +3654,6 @@
           });
       }
 
-      // ------------------------------------------------------------------
-      // MODAL: detaliul unei comenzi, doar vizualizare (Agent / Magazin)
-      // ------------------------------------------------------------------
       function renderComandaReadonlyModal(c, lines, profiles) {
         const overlay = document.createElement("div");
         overlay.id = "comanda-readonly-overlay";
@@ -3921,9 +3705,6 @@
         });
       }
 
-      // ------------------------------------------------------------------
-      // TAB "Comenzi" — Admin / Superadmin (management complet)
-      // ------------------------------------------------------------------
       async function renderComenziAdmin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
 
@@ -4025,9 +3806,6 @@
           });
       }
 
-      // ------------------------------------------------------------------
-      // TAB "Comenzile mele" — Agent (creare + listă proprii)
-      // ------------------------------------------------------------------
       async function renderComenziAgent(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
 
@@ -4148,9 +3926,6 @@
           });
       }
 
-      // ------------------------------------------------------------------
-      // TAB "Comenzile mele" — Magazin (doar vizualizare, comenzi primite)
-      // ------------------------------------------------------------------
       async function renderComenziMagazin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
 
@@ -4186,8 +3961,6 @@
           return;
         }
 
-        // Un magazin alocat unui Magazin-HUB nu mai poate crea comenzi
-        // proprii — comanda se face de către HUB, în numele lui.
         const esteAlocatUnuiHub = (alocareHub || []).length > 0;
 
         const myComenziIds = new Set((comenzi || []).map((c) => c.id));
@@ -4259,11 +4032,6 @@
         }
       }
 
-      // ------------------------------------------------------------------
-      // TAB "Comenzile mele" — Magazin-HUB: read-only, agregat pe toate
-      // magazinele (filialele) alocate prin tabelul hub_magazine. Nu poate
-      // crea comenzi noi.
-      // ------------------------------------------------------------------
       async function renderComenziHub(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         const [
@@ -4375,10 +4143,6 @@
           });
       }
 
-      // ------------------------------------------------------------------
-      // TAB "Aprobări" — Superadmin: cereri de ștergere a comenzilor,
-      // solicitate de un Admin, care așteaptă aprobarea/respingerea.
-      // ------------------------------------------------------------------
       async function renderAprobari(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
 
@@ -4474,9 +4238,6 @@
         });
       }
 
-      // ------------------------------------------------------------------
-      // TAB "Stocul meu" — Magazin (fără coloanele Preț intrare și Adaos)
-      // ------------------------------------------------------------------
       async function renderMagazinStoc(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         let produseQuery = supa
@@ -4526,6 +4287,7 @@
             <th class="px-3 py-3 font-medium">Total fără TVA</th>
             <th class="px-3 py-3 font-medium">Preț cu TVA</th>
             <th class="px-3 py-3 font-medium">Preț Recomandat</th>
+            <th class="px-3 py-3 font-medium">C.I.V.</th>
             <th class="px-3 py-3 font-medium">Acțiuni</th>
           </tr>
         </thead>
@@ -4553,6 +4315,7 @@
             <td class="px-3 py-3 text-xs font-medium">${fmtNum(p.total_fara_tva)}</td>
             <td class="px-3 py-3 text-xs font-medium">${fmtNum(p.pret_cu_tva)}</td>
             <td class="px-3 py-3 text-xs">${p.pret_recomandat !== null && p.pret_recomandat !== undefined ? fmtNum(p.pret_recomandat) : "—"}</td>
+            <td class="px-3 py-3 text-xs">${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</td>
             <td class="px-3 py-3 whitespace-nowrap">
               <button type="button" data-vinde-produs="${p.id}" class="vinde-produs-btn btn-primary rounded-md px-3 py-1.5 text-xs">Vinde produsul</button>
             </td>
@@ -4578,10 +4341,6 @@
         bindVanzareButoane(produse || [], () => renderMagazinStoc(container));
       }
 
-      // ------------------------------------------------------------------
-      // TAB "Comenzile mele" — Agent: sub-navigare internă
-      // (Comenzile mele / Stoc magazine alocate), fără coloane de cost.
-      // ------------------------------------------------------------------
       async function renderAgentStoc(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         const [
@@ -4658,6 +4417,7 @@
                 <th class="px-3 py-2 font-medium">Preț vânzare</th>
                 <th class="px-3 py-2 font-medium">Preț cu TVA</th>
                 <th class="px-3 py-2 font-medium">Preț Recomandat</th>
+                <th class="px-3 py-2 font-medium">C.I.V.</th>
               </tr>
             </thead>
             <tbody>
@@ -4682,10 +4442,11 @@
                 <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_vanzare)}</td>
                 <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_cu_tva)}</td>
                 <td class="px-3 py-2 text-xs">${p.pret_recomandat !== null && p.pret_recomandat !== undefined ? fmtNum(p.pret_recomandat) : "—"}</td>
+                <td class="px-3 py-2 text-xs">${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</td>
               </tr>`;
                       })
                       .join("")
-                  : `<tr><td colspan="9" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
+                  : `<tr><td colspan="10" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
               }
             </tbody>
           </table>
@@ -4707,11 +4468,6 @@
         });
       }
 
-      // ------------------------------------------------------------------
-      // Magazin-HUB — "Stocul meu": read-only, agregat pe toate magazinele
-      // (filialele) alocate prin tabelul hub_magazine. Nu poate vinde
-      // produse — fără butonul "Vinde produsul".
-      // ------------------------------------------------------------------
       async function renderHubStoc(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         const [
@@ -4786,6 +4542,7 @@
                 <th class="px-3 py-2 font-medium">Preț vânzare</th>
                 <th class="px-3 py-2 font-medium">Preț cu TVA</th>
                 <th class="px-3 py-2 font-medium">Preț Recomandat</th>
+                <th class="px-3 py-2 font-medium">C.I.V.</th>
               </tr>
             </thead>
             <tbody>
@@ -4810,10 +4567,11 @@
                 <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_vanzare)}</td>
                 <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_cu_tva)}</td>
                 <td class="px-3 py-2 text-xs">${p.pret_recomandat !== null && p.pret_recomandat !== undefined ? fmtNum(p.pret_recomandat) : "—"}</td>
+                <td class="px-3 py-2 text-xs">${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</td>
               </tr>`;
                       })
                       .join("")
-                  : `<tr><td colspan="9" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
+                  : `<tr><td colspan="10" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
               }
             </tbody>
           </table>
@@ -4834,82 +4592,6 @@
           });
         });
       }
-
-      // ------------------------------------------------------------------
-      // FEATURE: rol nou "Magazin-HUB" (magazin_hub) — un cont-centru
-      // căruia i se alocă mai multe conturi de tip "magazin" (de regulă
-      // filiale ale aceluiași nume, ex. "Sat An" → "Sat An - Carei",
-      // "Sat An - Valea lui Mihai"), la fel cum un agent are magazine
-      // alocate prin `agent_magazine`. HUB-ul vede (read-only, agregat pe
-      // toate magazinele alocate) exact ce vede un cont de magazin:
-      // Stocul meu, Încărcare baterii, Produse vândute — dar nu poate
-      // marca o încărcare de baterie și nu poate iniția o vânzare (fără
-      // butoane de acțiune în aceste liste).
-      //
-      // EXCEPȚIE — tab "Comenzi": HUB-ul POATE crea comenzi noi pentru
-      // magazinele alocate (la fel ca un Agent). Un magazin nealocat
-      // niciunui HUB poate crea comenzi pentru el însuși; un magazin
-      // alocat unui HUB nu mai poate crea comenzi proprii (comanda se
-      // face doar prin HUB).
-      //
-      // Migrare SQL necesară (o singură dată, în Supabase SQL editor):
-      //
-      //   create table hub_magazine (
-      //     hub_id uuid references profiles(id) not null,
-      //     magazin_id uuid references profiles(id) not null,
-      //     created_at timestamptz not null default now(),
-      //     primary key (hub_id, magazin_id)
-      //   );
-      //
-      //   -- Dacă `profiles.role` are un CHECK constraint cu o listă fixă
-      //   -- de valori, acesta trebuie extins ca să accepte 'magazin_hub'.
-      //   -- Exemplu (numele constrângerii poate diferi în proiectul tău):
-      //   -- alter table profiles drop constraint profiles_role_check;
-      //   -- alter table profiles add constraint profiles_role_check
-      //   --   check (role in ('magazin','magazin_hub','agent','admin','superadmin'));
-      //
-      //   -- RLS pe hub_magazine (citire pentru HUB-ul propriu + admin/superadmin):
-      //   alter table hub_magazine enable row level security;
-      //   create policy "hub select propriile alocari"
-      //     on hub_magazine for select
-      //     using (hub_id = auth.uid());
-      //   create policy "admin superadmin select toate alocarile hub"
-      //     on hub_magazine for select
-      //     using (
-      //       exists (select 1 from profiles pr where pr.id = auth.uid()
-      //       and pr.role in ('admin','superadmin'))
-      //     );
-      //   -- Scrierea (insert/delete) se face doar din Administrare
-      //   -- utilizatori (admin/superadmin), la fel ca la agent_magazine.
-      //
-      //   -- Dacă ai deja RLS pe `produse`/`comenzi`/`incarcari_baterie`
-      //   -- bazat pe magazin_id = auth.uid(), extinde-l cu o clauză OR
-      //   -- pentru HUB, de exemplu pe `produse`:
-      //   -- or exists (
-      //   --   select 1 from hub_magazine hm
-      //   --   where hm.magazin_id = produse.magazin_id
-      //   --   and hm.hub_id = auth.uid()
-      //   -- )
-      //
-      //   -- RLS pentru crearea de comenzi de către HUB și Magazin (insert
-      //   -- pe `comenzi`/`comanda_produse`), pe lângă politica deja
-      //   -- existentă pentru Agent (creat_de = auth.uid()):
-      //   -- create policy "hub insert comenzi pt magazinele alocate"
-      //   --   on comenzi for insert
-      //   --   with check (
-      //   --     creat_de = auth.uid() and exists (
-      //   --       select 1 from hub_magazine hm
-      //   --       where hm.hub_id = auth.uid() and hm.magazin_id = comenzi.magazin_id
-      //   --     )
-      //   --   );
-      //   -- create policy "magazin insert comanda proprie daca nu e alocat unui hub"
-      //   --   on comenzi for insert
-      //   --   with check (
-      //   --     creat_de = auth.uid() and magazin_id = auth.uid() and not exists (
-      //   --       select 1 from hub_magazine hm where hm.magazin_id = auth.uid()
-      //   --     )
-      //   --   );
-      // ------------------------------------------------------------------
 
       function renderAgentComenziTab(container) {
         container.innerHTML = `
@@ -5083,70 +4765,6 @@
         });
       }
 
-      // ==================================================================
-      // FEATURE: Încărcare baterii — ciclu obligatoriu de max. 15 zile,
-      // per produs aflat în stocul unui magazin (magazin_id setat).
-      // Funcționalitate 100% aditivă: un tabel Supabase nou
-      // (`incarcari_baterie`) + un tab nou de navigare per rol. Nu
-      // modifică nicio structură/funcție/tabel existent din aplicație.
-      //
-      // Reguli:
-      // - Ancora ciclului = produse.data_comenzii (data intrării în
-      //   stocul magazinului curent); la realocare, data_comenzii se
-      //   actualizează deja în cod, deci ancora se resetează automat.
-      // - Fiecare încărcare trebuie să se producă în max. 15 zile de la
-      //   ancoră (sau de la încărcarea anterioară) — altfel e permisă,
-      //   dar marcată roșu (întârziată). La timp = verde.
-      // - Doar rolul "magazin" poate înregistra o încărcare (butonul
-      //   apare doar la el); agent și admin/superadmin văd totul
-      //   read-only (status curent + istoric complet).
-      // - Ciclul se oprește automat când produsul iese din stocul unui
-      //   magazin (magazin_id golit la retragere) — nu mai apare în
-      //   listă. Când va exista funcția "vânzare stoc" către clientul
-      //   final, ea trebuie doar să golească/marcheze produsul în mod
-      //   similar, ca acesta să dispară automat și din această listă.
-      //
-      // Migrare SQL necesară (o singură dată, în Supabase SQL editor):
-      //
-      //   create table incarcari_baterie (
-      //     id bigint generated always as identity primary key,
-      //     produs_id uuid not null references produse(id) on delete cascade,
-      //     data_incarcare date not null,
-      //     inregistrat_de uuid references profiles(id),
-      //     observatii text,
-      //     created_at timestamptz not null default now()
-      //   );
-      //   alter table incarcari_baterie enable row level security;
-      //
-      //   create policy "magazin insert propriile incarcari"
-      //     on incarcari_baterie for insert
-      //     with check (
-      //       exists (select 1 from produse p where p.id = produs_id and p.magazin_id = auth.uid())
-      //     );
-      //   create policy "magazin select propriile incarcari"
-      //     on incarcari_baterie for select
-      //     using (
-      //       exists (select 1 from produse p where p.id = produs_id and p.magazin_id = auth.uid())
-      //     );
-      //   create policy "agent select incarcari magazine alocate"
-      //     on incarcari_baterie for select
-      //     using (
-      //       exists (
-      //         select 1 from produse p
-      //         join agent_magazine am on am.magazin_id = p.magazin_id
-      //         where p.id = produs_id and am.agent_id = auth.uid()
-      //       )
-      //     );
-      //   create policy "admin superadmin select toate incarcarile"
-      //     on incarcari_baterie for select
-      //     using (
-      //       exists (
-      //         select 1 from profiles pr where pr.id = auth.uid()
-      //         and pr.role in ('admin','superadmin')
-      //       )
-      //     );
-      // ==================================================================
-
       const ZILE_CICLU_BATERIE = 15;
 
       function adaugaZileData(dataISO, zile) {
@@ -5165,9 +4783,6 @@
         return Math.round((a - b) / 86400000);
       }
 
-      // Calculează ciclurile de încărcare deja încheiate + starea
-      // ciclului curent pentru un produs aflat în stocul unui magazin.
-      // Returnează null dacă produsul nu e (încă) la un magazin.
       function calculeazaCicluriBaterie(
         produs,
         toateIncarcarile,
@@ -5247,9 +4862,6 @@
     </div>`;
       }
 
-      // Modal simplu de identificare a produsului (categorie, marcă,
-      // culoare, VIN) — deschis la click pe ID-ul produsului, în toate
-      // cele 3 vederi, pentru identificare rapidă fără a părăsi tab-ul.
       function renderIdentificaProdusModal(produs) {
         const overlay = document.createElement("div");
         overlay.id = "identifica-produs-overlay";
@@ -5279,8 +4891,6 @@
         });
       }
 
-      // Modal cu istoricul complet al încărcărilor unui produs (comun
-      // pentru toate cele 3 vederi — magazin, agent, admin/superadmin).
       function renderIstoricBaterieModal(produs, cicluInfo) {
         const overlay = document.createElement("div");
         overlay.id = "istoric-baterie-overlay";
@@ -5324,9 +4934,6 @@
         });
       }
 
-      // Tabel comun pentru cele 3 vederi. `permiteIncarcare` afișează
-      // butonul de înregistrare a unei încărcări noi (doar la magazin).
-      // `arataMagazin` adaugă coloana cu numele magazinului (agent/admin).
       function renderBateriiTable(
         produse,
         incarcari,
@@ -5384,8 +4991,6 @@
     </div>`;
       }
 
-      // Leagă evenimentele (istoric +, opțional, marchează încărcare)
-      // pentru toate rândurile din tabelul randat de renderBateriiTable.
       function bindBateriiTableEvents(
         container,
         produse,
@@ -5424,9 +5029,6 @@
         });
       }
 
-      // ------------------------------------------------------------------
-      // TAB "Încărcare baterii" — dispatcher pe rol.
-      // ------------------------------------------------------------------
       function renderBateriiTab(container) {
         if (currentProfile.role === "magazin")
           return renderBateriiMagazin(container);
@@ -5437,8 +5039,6 @@
         return renderBateriiAdmin(container);
       }
 
-      // Magazin: doar produsele proprii, cu buton de înregistrare a
-      // încărcării de azi.
       async function renderBateriiMagazin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         let bateriiQuery = supa
@@ -5503,7 +5103,6 @@
         );
       }
 
-      // Agent: read-only, produsele din magazinele alocate lui.
       async function renderBateriiAgent(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         const [
@@ -5565,8 +5164,6 @@
         bindBateriiTableEvents(container, produse || [], incarcari || []);
       }
 
-      // Magazin-HUB: read-only, agregat pe toate magazinele (filialele)
-      // alocate prin tabelul hub_magazine — nu poate marca încărcări.
       async function renderBateriiHub(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         const [
@@ -5625,8 +5222,6 @@
         bindBateriiTableEvents(container, produse || [], incarcari || []);
       }
 
-      // Admin / Superadmin: read-only, toate produsele aflate la orice
-      // magazin (magazin_id setat).
       async function renderBateriiAdmin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         let bateriiQueryAdmin = supa
@@ -5673,85 +5268,8 @@
         bindBateriiTableEvents(container, produse || [], incarcari || []);
       }
 
-      // ==================================================================
-      // FEATURE: Vânzare produs către client final — magazinele își vând
-      // produsele din stocul propriu, iar admin/superadmin pot vinde
-      // produsele marcate "Vânzare directă". Funcționalitate 100%
-      // aditivă: coloane noi pe `produse` + un bucket nou de Storage +
-      // un tab nou de navigare per rol. Nu modifică nicio structură de
-      // date sau funcție existentă din aplicație.
-      //
-      // Reguli:
-      // - Poate iniția vânzarea: rolul "magazin" pentru produsele din
-      //   propriul stoc (magazin_id = auth.uid()), respectiv
-      //   admin/superadmin pentru produsele cu vanzare_directa = true.
-      // - La salvare se cer: Nume Prenume, Adresă, Telefon, Email,
-      //   fișier Factură, fișier P.V. de predare (ambele obligatorii) și,
-      //   dacă bifează "Garanție extinsă", și fișierul de Garanție
-      //   extinsă.
-      // - Produsul vândut (vandut = true) dispare automat din listele de
-      //   stoc (Stocul meu / Depozit central - Produse trimise) și apare
-      //   în tab-ul nou "Produse vândute".
-      // - Magazinul vede doar propriile vânzări; admin/superadmin văd
-      //   toate vânzările (din toate magazinele + vânzările directe) și
-      //   pot deschide fișierele încărcate. Agentul nu are acces la acest
-      //   tab.
-      //
-      // Migrare SQL necesară (o singură dată, în Supabase SQL editor):
-      //
-      //   alter table produse add column vandut boolean not null default false;
-      //   alter table produse add column data_vanzare timestamptz;
-      //   alter table produse add column vandut_de uuid references profiles(id);
-      //   alter table produse add column client_nume text;
-      //   alter table produse add column client_adresa text;
-      //   alter table produse add column client_telefon text;
-      //   alter table produse add column client_email text;
-      //   alter table produse add column garantie_extinsa boolean not null default false;
-      //   alter table produse add column factura_url text;
-      //   alter table produse add column pv_predare_url text;
-      //   alter table produse add column garantie_extinsa_url text;
-      //
-      //   -- Bucket nou de Storage (privat), creat din Supabase Dashboard
-      //   -- sau via SQL: insert into storage.buckets (id, name, public)
-      //   -- values ('documente-vanzari', 'documente-vanzari', false);
-      //
-      //   create policy "upload documente vanzari"
-      //     on storage.objects for insert
-      //     with check (
-      //       bucket_id = 'documente-vanzari' and (
-      //         exists (
-      //           select 1 from produse p
-      //           where p.id::text = (storage.foldername(name))[1]
-      //           and p.magazin_id = auth.uid()
-      //         )
-      //         or exists (
-      //           select 1 from profiles pr where pr.id = auth.uid()
-      //           and pr.role in ('admin','superadmin')
-      //         )
-      //       )
-      //     );
-      //   create policy "select documente vanzari"
-      //     on storage.objects for select
-      //     using (
-      //       bucket_id = 'documente-vanzari' and (
-      //         exists (
-      //           select 1 from produse p
-      //           where p.id::text = (storage.foldername(name))[1]
-      //           and p.magazin_id = auth.uid()
-      //         )
-      //         or exists (
-      //           select 1 from profiles pr where pr.id = auth.uid()
-      //           and pr.role in ('admin','superadmin')
-      //         )
-      //       )
-      //     );
-      // ==================================================================
-
       const BUCKET_VANZARI = "documente-vanzari";
 
-      // Încarcă un fișier în bucketul privat de documente de vânzare, sub
-      // folderul produsului (produs_id), cu un nume unic. Returnează
-      // path-ul salvat în Storage (nu URL public — bucketul e privat).
       async function incarcaDocumentVanzare(produsId, file, tip) {
         const extensie = (file.name.split(".").pop() || "bin").toLowerCase();
         const path = `${produsId}/${tip}_${Date.now()}.${extensie}`;
@@ -5762,8 +5280,6 @@
         return path;
       }
 
-      // Generează un URL semnat, temporar, pentru vizualizarea/descărcarea
-      // unui document privat de vânzare.
       async function obtineUrlSemnatVanzare(path) {
         const { data, error } = await supa.storage
           .from(BUCKET_VANZARI)
@@ -5772,11 +5288,6 @@
         return data.signedUrl;
       }
 
-      // Leagă click-urile pe orice buton "Vinde produsul" prezent în DOM
-      // (marcat cu data-vinde-produs) de modalul de vânzare. Funcție
-      // generică, reutilizabilă din orice listă de produse (stocul unui
-      // magazin sau produsele "Vânzare directă" din Depozit central) —
-      // nu modifică logica de randare/salvare a rândurilor existente.
       function bindVanzareButoane(produse, refresh) {
         document.querySelectorAll("[data-vinde-produs]").forEach((btn) => {
           const produs = (produse || []).find(
@@ -5789,7 +5300,6 @@
         });
       }
 
-      // Modal formular pentru vânzarea unui produs către clientul final.
       function deschideModalVanzareProdus(produs, refresh) {
         const overlay = document.createElement("div");
         overlay.id = "vanzare-produs-overlay";
@@ -5928,10 +5438,6 @@
           });
       }
 
-      // Buton pentru deschiderea unui document privat de vânzare
-      // într-un tab nou, printr-un URL semnat generat la cerere.
-      // Leagă click-ul pe celulele de adresă (trunchiate la 2 rânduri) de
-      // extinderea/restrângerea textului complet, pe loc, fără modal.
       function bindAdresaToggle(container) {
         container.querySelectorAll(".adresa-cell").forEach((cell) => {
           cell.addEventListener("click", () => {
@@ -5959,9 +5465,6 @@
         });
       }
 
-      // Leagă butoanele "Istoric" din tabelul de produse vândute de
-      // modalul existent cu istoricul complet al încărcărilor —
-      // ciclul e calculat ca fiind încheiat la data vânzării.
       function bindIstoricBaterieVanzare(container, produse, incarcari) {
         (produse || []).forEach((p) => {
           const c = calculeazaCicluriBaterie(
@@ -5996,6 +5499,7 @@
     <td class="px-3 py-3 text-xs">${esc(p.marca || "—")}</td>
     <td class="px-3 py-3 text-xs">${esc(p.culoare || "—")}</td>
     <td class="px-3 py-3 text-xs font-mono">${esc(p.vin || "—")}</td>
+    <td class="px-3 py-3 text-xs">${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</td>
     <td class="px-3 py-3 text-xs">${esc(p.client_nume || "—")}</td>
     <td class="px-3 py-3 text-xs text-slate-500">${esc(p.client_telefon || "—")}</td>
     <td class="px-3 py-3 text-xs text-slate-500">${esc(p.client_email || "—")}</td>
@@ -6028,6 +5532,7 @@
             <th class="px-3 py-3 font-medium">Marcă</th>
             <th class="px-3 py-3 font-medium">Culoare</th>
             <th class="px-3 py-3 font-medium">VIN</th>
+            <th class="px-3 py-3 font-medium">C.I.V.</th>
             <th class="px-3 py-3 font-medium">Client</th>
             <th class="px-3 py-3 font-medium">Telefon</th>
             <th class="px-3 py-3 font-medium">Email</th>
@@ -6056,7 +5561,6 @@
     </div>`;
       }
 
-      // Dispatcher tab "Produse vândute" — comportament diferit per rol.
       function renderVanduteTab(container) {
         if (currentProfile.role === "magazin")
           return renderVanduteMagazin(container);
@@ -6065,8 +5569,6 @@
         return renderVanduteAdmin(container);
       }
 
-      // Magazin: doar propriile vânzări (fără coloana Magazin — gestionează
-      // doar produsele proprii).
       async function renderVanduteMagazin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         let vanduteQuery = supa
@@ -6108,9 +5610,6 @@
         bindAdresaToggle(container);
       }
 
-      // Magazin-HUB: read-only, agregat pe toate magazinele (filialele)
-      // alocate prin tabelul hub_magazine — coloana "Magazin" identifică
-      // filiala de proveniență a fiecărei vânzări.
       async function renderVanduteHub(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         const [
@@ -6178,8 +5677,6 @@
         bindAdresaToggle(container);
       }
 
-      // Admin / Superadmin: toate vânzările — din toate magazinele plus
-      // vânzările directe proprii.
       async function renderVanduteAdmin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         let vanduteQueryAdmin = supa
@@ -6236,26 +5733,6 @@
         bindAdresaToggle(container);
       }
 
-      // ==================================================================
-      // STATISTICI — modul aditiv, comun tuturor rolurilor. Nu modifică
-      // nicio structură/funcție/tabel existent din aplicație și nu
-      // necesită nicio migrare SQL (folosește exclusiv tabelele deja
-      // existente: produse, comenzi, comanda_produse, incarcari_baterie,
-      // profiles, agent_magazine, hub_magazine).
-      //
-      // Comportament: un raport filtrabil (Produse sau Comenzi), afișat
-      // ca listă completă cu toate coloanele la care rolul curent are
-      // acces (aceleași reguli de vizibilitate ca în restul aplicației:
-      // "Preț intrare" și "Adaos" doar pentru admin/superadmin). Câmpul
-      // de căutare din header caută în aceleași coloane accesibile.
-      // Butonul "Exportă Excel" exportă exact rezultatul afișat curent.
-      // ==================================================================
-
-      // Starea filtrelor e ținută la nivel de modul (nu local funcției de
-      // randare) ca să supraviețuiască re-randărilor declanșate de căsuța
-      // de căutare globală (care re-cheamă dispatchTab la fiecare
-      // modificare) — altfel utilizatorul și-ar pierde filtrele aplicate
-      // de fiecare dată când tastează în căutare.
       let statisticiState = null;
 
       function statisticiStateImplicit() {
@@ -6273,14 +5750,11 @@
           marca: "",
           culoare: "",
           garantieExtinsa: "", // "" (Toate) | "da" | "nu"
+          civ: "", // "" (Toate) | "da" | "nu"
           afiseazaTotal: false,
         };
       }
 
-      // Scopul de magazine vizibile rolului curent:
-      //   { all: true }               -> admin/superadmin, fără restricție
-      //   { all: false, ids: [...] }  -> magazin (propriul id), agent/hub
-      //                                  (magazinele alocate)
       async function scopStatisticiRol() {
         if (
           currentProfile.role === "admin" ||
@@ -6308,8 +5782,6 @@
         return { all: false, ids: [] };
       }
 
-      // Presetări rapide de interval (format YYYY-MM-DD), relativ la data
-      // curentă — luni este considerat prima zi a săptămânii.
       function presetariPerioadaStatistici() {
         const azi = new Date();
         const iso = (d) => d.toISOString().slice(0, 10);
@@ -6375,9 +5847,6 @@
           : "—";
       }
 
-      // Coloanele complete pentru raportul de PRODUSE, condiționate de rol
-      // ("Preț intrare" și "Adaos" doar admin/superadmin — aceeași regulă
-      // deja aplicată în "Stocul meu" / "Depozit central").
       function coloaneStatisticiProduse(esteAdmin) {
         const coloane = [
           { key: "id_produs", label: "ID produs" },
@@ -6410,6 +5879,7 @@
           { key: "client_email", label: "Email client" },
           { key: "client_adresa", label: "Adresă client" },
           { key: "garantie_label", label: "Garanție extinsă" },
+          { key: "civ_label", label: "C.I.V." },
         );
         return coloane;
       }
@@ -6432,6 +5902,8 @@
             return p.vandut ? "Da" : "Nu";
           case "garantie_label":
             return p.garantie_extinsa ? "Da" : "Nu";
+          case "civ_label":
+            return p.civ ? "Da" : "Nu";
           case "pret_intrare":
           case "pret_vanzare":
           case "adaos":
@@ -6447,11 +5919,6 @@
         }
       }
 
-      // Rândul de "Total" pentru raportul de produse — se însumează doar
-      // coloanele cu sume de preț, exact cele la care rolul curent are
-      // acces (coloane deja filtrate în `coloane`, primite din
-      // coloaneStatisticiProduse(esteAdmin)); restul coloanelor rămân goale,
-      // cu eticheta "TOTAL" pe prima coloană.
       const COLOANE_PRET_PRODUSE = [
         "pret_intrare",
         "adaos",
@@ -6507,9 +5974,6 @@
         }
       }
 
-      // Construiește un tabel HTML generic, read-only, dintr-un set de
-      // coloane { key, label } și o funcție care extrage valoarea afișată
-      // pentru fiecare (rând, coloană).
       function tabelStatisticiHtml(coloane, randuri, getValoare, randTotal) {
         if (!randuri.length) {
           return `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun rezultat pentru filtrele selectate.</p></div>`;
@@ -6557,12 +6021,6 @@
     </div>`;
       }
 
-      // Construiește și descarcă un fișier Excel (ExcelJS) cu exact
-      // coloanele + rândurile afișate curent în raport (+ rândul de Total,
-      // dacă e furnizat), plus o coloană "Nr. crt." (doar pe rândurile de
-      // date, nu pe header sau pe rândul de Total), borduri pe toate
-      // celulele completate, text centrat, bold pe header/Total, și
-      // lățime de coloană ajustată automat la conținut.
       async function exportStatisticiExcel(
         meta,
         coloane,
@@ -6582,7 +6040,6 @@
         const wb = new ExcelJS.Workbook();
         const ws = wb.addWorksheet(meta.tipLabel.slice(0, 31));
 
-        // Lățime de coloană ajustată la cel mai lung conținut din coloană.
         const toateRandurile = [
           antete,
           ...randuriDate,
@@ -6632,7 +6089,6 @@
         URL.revokeObjectURL(url);
       }
 
-      // Punct de intrare unic — folosit de toate rolurile.
       async function renderStatisticiTab(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
         const esteAdmin =
@@ -6658,6 +6114,11 @@
         const state = statisticiState;
         const presets = presetariPerioadaStatistici();
 
+        const statLabel = (txt) =>
+          `<label class="block text-[11px] font-medium text-slate-500 mb-0.5">${txt}</label>`;
+        const statInput = () =>
+          "w-full border rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--teal)] focus:border-transparent";
+
         const areFiltruMagazin = magazineVizibile.length > 0 || esteAdmin;
         const magazineFiltruList = esteAdmin
           ? [
@@ -6672,28 +6133,30 @@
           : magazineVizibile;
 
         container.innerHTML = `
-    <div class="space-y-4">
-      <div class="bg-white rounded-xl border p-4 space-y-3" style="border-color:var(--line)">
-        <div class="flex flex-wrap items-center gap-1.5">
-          <span class="text-xs font-semibold text-slate-500 mr-1">Date:</span>
-          <button type="button" data-tip="produse" class="stat-tip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.tip === "produse" ? "btn-primary" : ""}" style="border-color:var(--line)">Produse</button>
-          <button type="button" data-tip="comenzi" class="stat-tip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.tip === "comenzi" ? "btn-primary" : ""}" style="border-color:var(--line)">Comenzi</button>
+    <div class="space-y-3">
+      <div class="bg-white rounded-xl border p-3 space-y-2" style="border-color:var(--line)">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <div class="flex flex-wrap items-center gap-1">
+            <span class="text-xs font-semibold text-slate-500 mr-1">Date:</span>
+            <button type="button" data-tip="produse" class="stat-tip-btn rounded-md px-2.5 py-1 text-xs font-medium border ${state.tip === "produse" ? "btn-primary" : ""}" style="border-color:var(--line)">Produse</button>
+            <button type="button" data-tip="comenzi" class="stat-tip-btn rounded-md px-2.5 py-1 text-xs font-medium border ${state.tip === "comenzi" ? "btn-primary" : ""}" style="border-color:var(--line)">Comenzi</button>
+          </div>
+          <div id="stat-subtip-wrap" class="flex flex-wrap items-center gap-1 ${state.tip === "produse" ? "" : "hidden"}">
+            <span class="text-xs font-semibold text-slate-500 mr-1">Subset${esteAdmin ? " (poți combina mai multe)" : ""}:</span>
+            <button type="button" data-subtip="toate" class="stat-subtip-btn rounded-md px-2.5 py-1 text-xs font-medium border ${state.subTipuri.includes("toate") ? "btn-primary" : ""}" style="border-color:var(--line)">Toate</button>
+            ${
+              esteAdmin
+                ? `<button type="button" data-subtip="stoc_central" class="stat-subtip-btn rounded-md px-2.5 py-1 text-xs font-medium border ${state.subTipuri.includes("stoc_central") ? "btn-primary" : ""}" style="border-color:var(--line)">Stoc central</button>`
+                : ""
+            }
+            <button type="button" data-subtip="stoc_magazine" class="stat-subtip-btn rounded-md px-2.5 py-1 text-xs font-medium border ${state.subTipuri.includes("stoc_magazine") ? "btn-primary" : ""}" style="border-color:var(--line)">În stoc magazine</button>
+            <button type="button" data-subtip="vandute" class="stat-subtip-btn rounded-md px-2.5 py-1 text-xs font-medium border ${state.subTipuri.includes("vandute") ? "btn-primary" : ""}" style="border-color:var(--line)">Vândute</button>
+          </div>
         </div>
-        <div id="stat-subtip-wrap" class="flex flex-wrap items-center gap-1.5 ${state.tip === "produse" ? "" : "hidden"}">
-          <span class="text-xs font-semibold text-slate-500 mr-1">Subset${esteAdmin ? " (poți combina mai multe)" : ""}:</span>
-          <button type="button" data-subtip="toate" class="stat-subtip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.subTipuri.includes("toate") ? "btn-primary" : ""}" style="border-color:var(--line)">Toate</button>
-          ${
-            esteAdmin
-              ? `<button type="button" data-subtip="stoc_central" class="stat-subtip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.subTipuri.includes("stoc_central") ? "btn-primary" : ""}" style="border-color:var(--line)">Stoc central</button>`
-              : ""
-          }
-          <button type="button" data-subtip="stoc_magazine" class="stat-subtip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.subTipuri.includes("stoc_magazine") ? "btn-primary" : ""}" style="border-color:var(--line)">În stoc magazine</button>
-          <button type="button" data-subtip="vandute" class="stat-subtip-btn rounded-lg px-3 py-1.5 text-xs font-medium border ${state.subTipuri.includes("vandute") ? "btn-primary" : ""}" style="border-color:var(--line)">Vândute</button>
-        </div>
-        <div class="flex flex-wrap items-end gap-3">
-          <div>
-            ${fieldLabel("Perioadă")}
-            <select id="stat-perioada" class="${inputBase()}">
+        <div class="flex flex-wrap items-end gap-2">
+          <div class="w-28">
+            ${statLabel("Perioadă")}
+            <select id="stat-perioada" class="${statInput()}">
               <option value="" ${state.perioada === "" ? "selected" : ""}>Perioada selectată</option>
               ${presets
                 .map(
@@ -6703,28 +6166,28 @@
                 .join("")}
             </select>
           </div>
-          <div>${fieldLabel("De la")}<input type="date" id="stat-start" value="${state.start}" class="${inputBase()}"></div>
-          <div>${fieldLabel("Până la")}<input type="date" id="stat-end" value="${state.end}" class="${inputBase()}"></div>
+          <div class="w-32">${statLabel("De la")}<input type="date" id="stat-start" value="${state.start}" class="${statInput()}"></div>
+          <div class="w-32">${statLabel("Până la")}<input type="date" id="stat-end" value="${state.end}" class="${statInput()}"></div>
           ${
             areFiltruMagazin
-              ? `<div>${fieldLabel("Magazin")}
+              ? `<div class="w-32">${statLabel("Magazin")}
               <div class="relative">
-                <input type="text" id="stat-magazin-input" class="${inputBase()}" placeholder="Toate" autocomplete="off" value="${esc(magazinLabelDin(magazineFiltruList, state.magazinId) === "—" ? "" : magazinLabelDin(magazineFiltruList, state.magazinId))}">
+                <input type="text" id="stat-magazin-input" class="${statInput()}" placeholder="Toate" autocomplete="off" value="${esc(magazinLabelDin(magazineFiltruList, state.magazinId) === "—" ? "" : magazinLabelDin(magazineFiltruList, state.magazinId))}">
                 <input type="hidden" id="stat-magazin-id" value="${esc(state.magazinId)}">
                 <div id="stat-magazin-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
               </div>
             </div>`
               : ""
           }
-          <div>${fieldLabel("Agent")}
+          <div class="w-28">${statLabel("Agent")}
             <div class="relative">
-              <input type="text" id="stat-agent-input" class="${inputBase()}" placeholder="Toți" autocomplete="off" value="${esc(state.agentNume)}">
+              <input type="text" id="stat-agent-input" class="${statInput()}" placeholder="Toți" autocomplete="off" value="${esc(state.agentNume)}">
               <div id="stat-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
-          <div id="stat-categorie-wrap" class="${state.tip === "produse" ? "" : "hidden"}">
-            ${fieldLabel("Categorie")}
-            <select id="stat-categorie" class="${inputBase()}">
+          <div id="stat-categorie-wrap" class="w-32 ${state.tip === "produse" ? "" : "hidden"}">
+            ${statLabel("Categorie")}
+            <select id="stat-categorie" class="${statInput()}">
               <option value="">Toate</option>
               ${CATEGORII_PRODUS.map(
                 (c) =>
@@ -6732,46 +6195,53 @@
               ).join("")}
             </select>
           </div>
-          <div id="stat-marca-wrap" class="${state.tip === "produse" ? "" : "hidden"}">
-            ${fieldLabel("Marcă")}
+          <div id="stat-marca-wrap" class="w-28 ${state.tip === "produse" ? "" : "hidden"}">
+            ${statLabel("Marcă")}
             <div class="relative">
-              <input type="text" id="stat-marca-input" class="${inputBase()}" placeholder="Toate" autocomplete="off" value="${esc(state.marca)}">
+              <input type="text" id="stat-marca-input" class="${statInput()}" placeholder="Toate" autocomplete="off" value="${esc(state.marca)}">
               <div id="stat-marca-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
-          <div id="stat-culoare-wrap" class="${state.tip === "produse" ? "" : "hidden"}">
-            ${fieldLabel("Culoare")}
+          <div id="stat-culoare-wrap" class="w-24 ${state.tip === "produse" ? "" : "hidden"}">
+            ${statLabel("Culoare")}
             <div class="relative">
-              <input type="text" id="stat-culoare-input" class="${inputBase()}" placeholder="Toate" autocomplete="off" value="${esc(state.culoare)}">
+              <input type="text" id="stat-culoare-input" class="${statInput()}" placeholder="Toate" autocomplete="off" value="${esc(state.culoare)}">
               <div id="stat-culoare-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
-          <div id="stat-garantie-wrap" class="${state.tip === "produse" ? "" : "hidden"}">
-            ${fieldLabel("Garanție ext.")}
-            <select id="stat-garantie" class="${inputBase()}">
+          <div id="stat-garantie-wrap" class="w-24 ${state.tip === "produse" ? "" : "hidden"}">
+            ${statLabel("Garanție ext.")}
+            <select id="stat-garantie" class="${statInput()}">
               <option value="" ${state.garantieExtinsa === "" ? "selected" : ""}>Toate</option>
               <option value="da" ${state.garantieExtinsa === "da" ? "selected" : ""}>Da</option>
               <option value="nu" ${state.garantieExtinsa === "nu" ? "selected" : ""}>Nu</option>
             </select>
           </div>
+          <div id="stat-civ-wrap" class="w-24 ${state.tip === "produse" ? "" : "hidden"}">
+            ${statLabel("C.I.V.")}
+            <select id="stat-civ" class="${statInput()}">
+              <option value="" ${state.civ === "" ? "selected" : ""}>Toate</option>
+              <option value="da" ${state.civ === "da" ? "selected" : ""}>Da</option>
+              <option value="nu" ${state.civ === "nu" ? "selected" : ""}>Nu</option>
+            </select>
+          </div>
           <div id="stat-total-wrap" class="flex items-end gap-1.5 ${state.tip === "produse" ? "" : "hidden"}">
             <div>
-              <span class="block text-xs font-medium text-slate-600 mb-1">Linie Total</span>
-              <div class="flex gap-1.5">
-                <button type="button" data-total="nu" class="stat-total-btn rounded-lg px-3 py-2 text-xs font-medium border ${!state.afiseazaTotal ? "btn-primary" : ""}" style="border-color:var(--line)">Nu</button>
-                <button type="button" data-total="da" class="stat-total-btn rounded-lg px-3 py-2 text-xs font-medium border ${state.afiseazaTotal ? "btn-primary" : ""}" style="border-color:var(--line)">Da</button>
+              <span class="block text-[11px] font-medium text-slate-500 mb-0.5">Linie Total</span>
+              <div class="flex gap-1">
+                <button type="button" data-total="nu" class="stat-total-btn rounded-md px-2.5 py-1 text-xs font-medium border ${!state.afiseazaTotal ? "btn-primary" : ""}" style="border-color:var(--line)">Nu</button>
+                <button type="button" data-total="da" class="stat-total-btn rounded-md px-2.5 py-1 text-xs font-medium border ${state.afiseazaTotal ? "btn-primary" : ""}" style="border-color:var(--line)">Da</button>
               </div>
             </div>
           </div>
-          <button id="stat-aplica" class="btn-primary rounded-lg px-4 py-2 text-sm">Aplică filtre</button>
-          <button id="stat-reset" class="rounded-lg px-4 py-2 text-sm font-medium border" style="border-color:var(--line)">✕ Elimină filtrele</button>
-          <button id="stat-export" class="rounded-lg px-4 py-2 text-sm font-medium border ml-auto" style="border-color:var(--line)">⬇ Exportă Excel</button>
+          <button id="stat-aplica" class="btn-primary rounded-md px-3 py-1.5 text-xs font-medium">Aplică filtre</button>
+          <button id="stat-reset" class="rounded-md px-3 py-1.5 text-xs font-medium border" style="border-color:var(--line)">✕ Elimină filtrele</button>
+          <button id="stat-export" class="rounded-md px-3 py-1.5 text-xs font-medium border ml-auto" style="border-color:var(--line)">⬇ Exportă Excel</button>
         </div>
       </div>
       <div id="stat-results"></div>
     </div>`;
 
-        // -------- autocomplete-uri (aceleași componente ca la produse) -----
         if (areFiltruMagazin) {
           attachMagazinAutocomplete(
             document.getElementById("stat-magazin-input"),
@@ -6806,7 +6276,6 @@
           );
         }
 
-        // -------- comutare Tip / Subtip (doar UI, fără refetch automat) ---
         container.querySelectorAll(".stat-tip-btn").forEach((btn) => {
           btn.addEventListener("click", () => {
             state.tip = btn.dataset.tip;
@@ -6837,7 +6306,6 @@
           });
         });
 
-        // -------- presetare perioadă din dropdown ---------------------
         document
           .getElementById("stat-perioada")
           .addEventListener("change", (e) => {
@@ -6944,7 +6412,6 @@
             return;
           }
 
-          // ---- tip === "produse" ----
           const coloaneCautare = [
             "id_produs",
             "agent",
@@ -6958,9 +6425,6 @@
           ];
           const orFilter = buildSearchOrFilter(termen, coloaneCautare);
 
-          // Construiește interogarea pentru UN singur subset — filtrele
-          // comune (categorie/marcă/culoare/agent/căutare) se aplică la fel
-          // indiferent de subset.
           function construiesteQuerySubset(subset) {
             let qs = supa.from("produse").select("*");
             if (subset === "stoc_central") {
@@ -6997,14 +6461,13 @@
               qs = qs.eq("garantie_extinsa", true);
             else if (state.garantieExtinsa === "nu")
               qs = qs.eq("garantie_extinsa", false);
+            if (state.civ === "da") qs = qs.eq("civ", true);
+            else if (state.civ === "nu") qs = qs.eq("civ", false);
             if (filtruVanzareDirecta) qs = qs.eq("vanzare_directa", true);
             if (orFilter) qs = qs.or(orFilter);
             return qs;
           }
 
-          // "toate" e mereu exclusiv; altfel se pot combina mai multe
-          // subseturi (ex: stoc central + vândute) — se rulează câte o
-          // interogare per subset ales și se reunesc rezultatele.
           const subseturiActive = state.subTipuri.includes("toate")
             ? ["toate"]
             : state.subTipuri;
@@ -7073,6 +6536,8 @@
           if (culoareInput) state.culoare = culoareInput.value.trim();
           const garantieSel = document.getElementById("stat-garantie");
           if (garantieSel) state.garantieExtinsa = garantieSel.value;
+          const civSel = document.getElementById("stat-civ");
+          if (civSel) state.civ = civSel.value;
           incarcaSiAfiseaza();
         });
         document.getElementById("stat-reset").addEventListener("click", () => {
