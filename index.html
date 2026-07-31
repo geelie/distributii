@@ -203,6 +203,23 @@
           max-height: calc(100vh - 300px);
         }
       }
+      .stat-shell {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .stat-results-flex {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .stat-results-flex > .tabel-fix-wrap {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none !important;
+      }
     </style>
   </head>
   <body class="min-h-screen">
@@ -2869,7 +2886,7 @@
           .join("");
 
         overlay.innerHTML = `
-    <div class="flex gap-4 items-start justify-center my-auto">
+    <div class="flex flex-col md:flex-row gap-4 items-center md:items-start justify-center my-auto">
       <div id="comanda-nou-card" class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl fade-in relative shrink-0">
         <button type="button" id="comanda-close-x" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-xl leading-none" title="Închide">✕</button>
         <h2 class="text-lg font-bold mb-5 pr-6">Comandă nouă</h2>
@@ -5734,6 +5751,14 @@
       }
 
       let statisticiState = null;
+      let statisticiResizeHandler = null;
+      function ajusteazaInaltimeStatistici() {
+        const shell = document.getElementById("stat-shell");
+        if (!shell) return;
+        const top = shell.getBoundingClientRect().top;
+        const disponibil = window.innerHeight - top - 16;
+        shell.style.height = Math.max(disponibil, 220) + "px";
+      }
 
       function statisticiStateImplicit() {
         const presets = presetariPerioadaStatistici();
@@ -6133,8 +6158,8 @@
           : magazineVizibile;
 
         container.innerHTML = `
-    <div class="space-y-3">
-      <div class="bg-white rounded-xl border p-3 space-y-2" style="border-color:var(--line)">
+    <div class="space-y-3 stat-shell" id="stat-shell">
+      <div class="bg-white rounded-xl border p-3 space-y-2 shrink-0" style="border-color:var(--line)">
         <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <div class="flex flex-wrap items-center gap-1">
             <span class="text-xs font-semibold text-slate-500 mr-1">Date:</span>
@@ -6239,8 +6264,15 @@
           <button id="stat-export" class="rounded-md px-3 py-1.5 text-xs font-medium border ml-auto" style="border-color:var(--line)">⬇ Exportă Excel</button>
         </div>
       </div>
-      <div id="stat-results"></div>
+      <div id="stat-results" class="stat-results-flex"></div>
     </div>`;
+
+        ajusteazaInaltimeStatistici();
+        if (statisticiResizeHandler) {
+          window.removeEventListener("resize", statisticiResizeHandler);
+        }
+        statisticiResizeHandler = () => ajusteazaInaltimeStatistici();
+        window.addEventListener("resize", statisticiResizeHandler);
 
         if (areFiltruMagazin) {
           attachMagazinAutocomplete(
@@ -6391,7 +6423,7 @@
             const getValoare = (c, key) =>
               randValoareComanda(c, toateMagazinele, liniiPerComanda, key);
             resultsEl.innerHTML = `
-      <p class="text-sm text-slate-500 mb-2">${(comenzi || []).length} comand${(comenzi || []).length === 1 ? "ă" : "ă"} găsit${(comenzi || []).length === 1 ? "ă" : "e"} pentru filtrele selectate</p>
+      <p class="text-sm text-slate-500 mb-2 shrink-0">${(comenzi || []).length} comand${(comenzi || []).length === 1 ? "ă" : "ă"} găsit${(comenzi || []).length === 1 ? "ă" : "e"} pentru filtrele selectate</p>
       ${tabelStatisticiHtml(coloane, comenzi || [], getValoare)}`;
 
             ultimulRaport = {
@@ -6501,7 +6533,7 @@
               ? calculeazaRandTotalProduse(coloane, produse || [])
               : null;
           resultsEl.innerHTML = `
-      <p class="text-sm text-slate-500 mb-2">${(produse || []).length} produs${(produse || []).length === 1 ? "" : "e"} găsit${(produse || []).length === 1 ? "" : "e"} pentru filtrele selectate</p>
+      <p class="text-sm text-slate-500 mb-2 shrink-0">${(produse || []).length} produs${(produse || []).length === 1 ? "" : "e"} găsit${(produse || []).length === 1 ? "" : "e"} pentru filtrele selectate</p>
       ${tabelStatisticiHtml(coloane, produse || [], getValoare, randTotal)}`;
 
           ultimulRaport = {
