@@ -2610,6 +2610,23 @@
         return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium ${cls}">${esc(STATUS_COMANDA_LABEL[status] || status)}</span>`;
       }
 
+      function plataStadiuLabel(c) {
+        if (c.stadiu_plata === "integral") return "Achitat integral";
+        if (c.stadiu_plata === "partial")
+          return `Achitat parțial${c.suma_achitata !== null && c.suma_achitata !== undefined ? " (" + fmtNum(c.suma_achitata) + " lei)" : ""}`;
+        return "Neachitat";
+      }
+
+      function plataBadge(c) {
+        const cls =
+          c.stadiu_plata === "integral"
+            ? "bg-emerald-50 text-emerald-700"
+            : c.stadiu_plata === "partial"
+              ? "bg-amber-50 text-amber-700"
+              : "bg-slate-100 text-slate-500";
+        return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium ${cls}">${esc(plataStadiuLabel(c))}</span>`;
+      }
+
       const COMANDA_FILTER_STATUSES = [
         { key: "in_asteptare", label: "În așteptare" },
         { key: "partial_onorata", label: "Parțial onorată" },
@@ -2937,6 +2954,10 @@
             <div id="comanda-lines" class="space-y-2"></div>
             <button type="button" id="comanda-add-line" class="mt-2 text-xs font-medium underline" style="color:var(--teal-dark)">+ Adaugă produs</button>
           </div>
+          <div class="max-w-[10rem]">
+            ${fieldLabel("Termen de plată (zile)")}
+            <input type="number" id="comanda-termen-plata" min="0" step="1" class="${inputBase()}" placeholder="ex: 30">
+          </div>
           <div>${fieldLabel("Observații (opțional)")}<textarea id="comanda-observatii" rows="2" class="${inputBase()}"></textarea></div>
           <div class="flex gap-2 pt-1">
             <button type="button" id="comanda-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
@@ -3096,12 +3117,18 @@
 
             const esteVanzareDirecta =
               mode === "admin" && magazinId === VANZARE_DIRECTA;
+            const termenPlataVal = document
+              .getElementById("comanda-termen-plata")
+              .value.trim();
             const numarComandaPayload = {
               magazin_id: esteVanzareDirecta ? null : magazinId,
               vanzare_directa: esteVanzareDirecta,
               agent: agentVal,
               creat_de: currentUser.id,
               status: "in_asteptare",
+              termen_plata: termenPlataVal
+                ? parseInt(termenPlataVal, 10)
+                : null,
               observatii:
                 document.getElementById("comanda-observatii").value.trim() ||
                 null,
@@ -3162,10 +3189,11 @@
   <div class="bg-white rounded-xl border p-2 flex items-center justify-between gap-3 flex-wrap" style="border-color:var(--line)">
     <div>
       <div class="font-semibold text-sm leading-tight">${esc(c.numar_comanda)} <span class="text-slate-400 font-normal">— ${esc(magazinLabel)}</span></div>
-      <div class="text-xs text-slate-400 leading-tight">Agent: ${esc(c.agent || "—")} · ${new Date(c.created_at).toLocaleDateString("ro-RO")} · ${lines.length} produs${lines.length === 1 ? "" : "e"}</div>
+      <div class="text-xs text-slate-400 leading-tight">Agent: ${esc(c.agent || "—")} · ${new Date(c.created_at).toLocaleDateString("ro-RO")} · ${lines.length} produs${lines.length === 1 ? "" : "e"}${c.termen_plata ? ` · Termen plată: ${c.termen_plata} zile` : ""}</div>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 flex-wrap">
       ${statusBadge(status)}
+      ${plataBadge(c)}
       <button data-open-comanda="${c.id}" class="rounded-md px-3 py-1.5 text-xs font-semibold border" style="border-color:var(--line)">Deschide</button>
     </div>
   </div>`;
@@ -3269,7 +3297,6 @@
   <div class="border rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap" style="border-color:var(--line)" data-linie="${l.id}">
     <div class="text-sm">
       <div class="font-medium">${esc(l.categorie || "—")}${l.marca ? " · " + esc(l.marca) : ""}${l.culoare ? " · " + esc(l.culoare) : ""}</div>
-      <div class="text-xs text-slate-400">Cantitate: ${l.cantitate}</div>
       ${
         produs
           ? `<div class="text-xs text-emerald-700 mt-1">Legat de produsul ${canManageStock ? `<button type="button" data-edit-produs-line="${l.id}" class="underline decoration-dotted hover:text-[var(--teal-dark)]" title="Deschide și editează datele produsului">${esc(produs.id_produs)}</button>` : esc(produs.id_produs)}${produs.vin ? " · VIN " + esc(produs.vin) : ""}</div>`
@@ -3428,6 +3455,7 @@
         <button id="comanda-detail-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
       </div>
       <p class="text-sm text-slate-500 mb-1">Magazin: <strong>${esc(magazinLabel)}</strong> · Agent: ${esc(c.agent || "—")}</p>
+      <p class="text-xs text-slate-400 mb-1">Creat la: ${c.created_at ? new Date(c.created_at).toLocaleDateString("ro-RO") : "—"} · Termen de plată: ${c.termen_plata ? c.termen_plata + " zile" : "—"}</p>
       ${c.observatii ? `<p class="text-xs text-slate-400 mb-3">Observații: ${esc(c.observatii)}</p>` : ""}
       <div id="comanda-lines-detail" class="space-y-2 my-4"></div>
       <div id="comanda-adauga-produs-wrap">
@@ -3453,6 +3481,27 @@
           : ""
       }
       <p id="comanda-detail-msg" class="text-sm text-center mt-2"></p>
+      ${
+        isStockManager
+          ? `<div class="mt-4 pt-3 border-t" style="border-color:var(--line)">
+        <p class="text-xs font-semibold text-slate-500 mb-2">Achitare</p>
+        <div class="flex flex-wrap items-center gap-2 mb-2">
+          <button type="button" data-plata="integral" class="plata-btn rounded-md px-3 py-1.5 text-xs font-medium border ${c.stadiu_plata === "integral" ? "btn-primary" : ""}" style="border-color:var(--line)">Achitat integral</button>
+          <button type="button" data-plata="partial" class="plata-btn rounded-md px-3 py-1.5 text-xs font-medium border ${c.stadiu_plata === "partial" ? "btn-primary" : ""}" style="border-color:var(--line)">Achitat parțial</button>
+        </div>
+        <div id="comanda-suma-achitata-wrap" class="mb-2 max-w-[12rem] ${c.stadiu_plata === "partial" ? "" : "hidden"}">
+          ${fieldLabel("Sumă achitată (lei)")}
+          <input type="number" id="comanda-suma-achitata" min="0" step="0.01" value="${c.suma_achitata ?? ""}" class="${inputBase()}">
+        </div>
+        <div class="mb-2">
+          ${fieldLabel("Detalii de plată")}
+          <input type="text" id="comanda-detalii-plata" value="${esc(c.detalii_plata || "")}" placeholder="Nr. ordin de plată, etc." class="${inputBase()}">
+        </div>
+        <button type="button" id="comanda-salveaza-plata" class="btn-primary rounded-lg py-2 px-4 text-sm">Salvează achitarea</button>
+        <p id="comanda-plata-msg" class="text-xs mt-1"></p>
+      </div>`
+          : ""
+      }
     </div>`;
         document.body.appendChild(overlay);
 
@@ -3632,6 +3681,77 @@
             onSaved();
           });
         }
+
+        let stadiuPlataSelectat = c.stadiu_plata || null;
+        const plataBtns = overlay.querySelectorAll(".plata-btn");
+        const sumaAchitataWrap = document.getElementById(
+          "comanda-suma-achitata-wrap",
+        );
+        plataBtns.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            stadiuPlataSelectat = btn.dataset.plata;
+            plataBtns.forEach((b) =>
+              b.classList.toggle("btn-primary", b === btn),
+            );
+            if (sumaAchitataWrap)
+              sumaAchitataWrap.classList.toggle(
+                "hidden",
+                stadiuPlataSelectat !== "partial",
+              );
+          });
+        });
+        const btnSalveazaPlata = document.getElementById(
+          "comanda-salveaza-plata",
+        );
+        if (btnSalveazaPlata) {
+          btnSalveazaPlata.addEventListener("click", async () => {
+            const plataMsg = document.getElementById("comanda-plata-msg");
+            if (!stadiuPlataSelectat) {
+              plataMsg.className = "text-xs mt-1 text-red-600";
+              plataMsg.textContent =
+                "Alege stadiul achitării (integral sau parțial).";
+              return;
+            }
+            const sumaInput = document.getElementById("comanda-suma-achitata");
+            const sumaVal =
+              sumaInput && sumaInput.value.trim() !== ""
+                ? parseFloat(sumaInput.value)
+                : null;
+            if (
+              stadiuPlataSelectat === "partial" &&
+              (sumaVal === null || isNaN(sumaVal))
+            ) {
+              plataMsg.className = "text-xs mt-1 text-red-600";
+              plataMsg.textContent = "Completează suma achitată parțial.";
+              return;
+            }
+            const detaliiVal =
+              document.getElementById("comanda-detalii-plata").value.trim() ||
+              null;
+            btnSalveazaPlata.disabled = true;
+            btnSalveazaPlata.textContent = "Se salvează...";
+            const { error: plataErr } = await supa
+              .from("comenzi")
+              .update({
+                stadiu_plata: stadiuPlataSelectat,
+                suma_achitata:
+                  stadiuPlataSelectat === "partial" ? sumaVal : null,
+                detalii_plata: detaliiVal,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", c.id);
+            if (plataErr) {
+              plataMsg.className = "text-xs mt-1 text-red-600";
+              plataMsg.textContent = plataErr.message;
+              btnSalveazaPlata.disabled = false;
+              btnSalveazaPlata.textContent = "Salvează achitarea";
+              return;
+            }
+            toast("Informațiile de achitare au fost salvate.");
+            overlay.remove();
+            onSaved();
+          });
+        }
       }
 
       function renderAddLinieComandaModal(marci, marcaCategorieMap, onAdd) {
@@ -3714,7 +3834,8 @@
         <button id="comanda-readonly-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
       </div>
       <p class="text-sm text-slate-500 mb-1">Magazin: <strong>${esc(magazinLabel)}</strong> · Agent: ${esc(c.agent || "—")}</p>
-      <div class="mb-3">${statusBadge(status)}</div>
+      <p class="text-xs text-slate-400 mb-1">Creat la: ${c.created_at ? new Date(c.created_at).toLocaleDateString("ro-RO") : "—"} · Termen de plată: ${c.termen_plata ? c.termen_plata + " zile" : "—"}</p>
+      <div class="mb-3 flex flex-wrap items-center gap-2">${statusBadge(status)}${plataBadge(c)}</div>
       <div class="space-y-2">
         ${lines
           .map(
@@ -3722,7 +3843,6 @@
         <div class="border rounded-lg p-3 flex items-center justify-between gap-3" style="border-color:var(--line)">
           <div class="text-sm">
             <div class="font-medium">${esc(l.categorie || "—")}${l.marca ? " · " + esc(l.marca) : ""}${l.culoare ? " · " + esc(l.culoare) : ""}</div>
-            <div class="text-xs text-slate-400">Cantitate: ${l.cantitate}</div>
           </div>
           <div class="flex flex-col items-end">
             <span class="text-xs font-medium ${l.status_linie === "trimis" ? "text-emerald-700" : l.status_linie === "realocat" ? "text-red-600" : l.status_linie === "asignat" ? "text-blue-700" : "text-amber-700"}">${esc(lineStatusLabel(l.status_linie))}</span>
@@ -5840,6 +5960,8 @@
           culoare: "",
           garantieExtinsa: "", // "" (Toate) | "da" | "nu"
           civ: "", // "" (Toate) | "da" | "nu"
+          termenPlata: "", // string numeric, gol = filtrul e ignorat
+          stadiuPlata: "", // "" (Toate) | "integral" | "partial"
           afiseazaTotal: false,
         };
       }
@@ -6039,6 +6161,8 @@
           { key: "agent", label: "Agent" },
           { key: "status_label", label: "Status" },
           { key: "created_at_label", label: "Data creării" },
+          { key: "termen_plata_label", label: "Termen de plată" },
+          { key: "stadiu_plata_label", label: "Stadiu plată" },
           { key: "nr_produse", label: "Nr. produse" },
           { key: "observatii", label: "Observații" },
         ];
@@ -6056,6 +6180,10 @@
             return c.created_at
               ? new Date(c.created_at).toLocaleDateString("ro-RO")
               : "—";
+          case "termen_plata_label":
+            return c.termen_plata ? c.termen_plata + " zile" : "—";
+          case "stadiu_plata_label":
+            return plataStadiuLabel(c);
           case "nr_produse":
             return String((liniiPerComanda.get(c.id) || []).length);
           default:
@@ -6274,6 +6402,18 @@
               <div id="stat-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
+          <div id="stat-termen-plata-wrap" class="w-28 ${state.tip === "comenzi" ? "" : "hidden"}">
+            ${statLabel("Termen de plată (zile)")}
+            <input type="number" id="stat-termen-plata" min="0" step="1" class="${statInput()}" placeholder="Toate" value="${esc(state.termenPlata)}">
+          </div>
+          <div id="stat-stadiu-plata-wrap" class="w-32 ${state.tip === "comenzi" ? "" : "hidden"}">
+            ${statLabel("Stadiul plății")}
+            <select id="stat-stadiu-plata" class="${statInput()}">
+              <option value="" ${state.stadiuPlata === "" ? "selected" : ""}>Toate</option>
+              <option value="integral" ${state.stadiuPlata === "integral" ? "selected" : ""}>Achitat integral</option>
+              <option value="partial" ${state.stadiuPlata === "partial" ? "selected" : ""}>Achitat parțial</option>
+            </select>
+          </div>
           <div id="stat-categorie-wrap" class="w-32 ${state.tip === "produse" ? "" : "hidden"}">
             ${statLabel("Categorie")}
             <select id="stat-categorie" class="${statInput()}">
@@ -6456,6 +6596,9 @@
               .gte("created_at", state.start + "T00:00:00")
               .lte("created_at", state.end + "T23:59:59");
             if (state.agentNume) q = q.ilike("agent", `%${state.agentNume}%`);
+            if (state.termenPlata)
+              q = q.eq("termen_plata", parseInt(state.termenPlata, 10));
+            if (state.stadiuPlata) q = q.eq("stadiu_plata", state.stadiuPlata);
             const orFilter = buildSearchOrFilter(termen, [
               "numar_comanda",
               "agent",
@@ -6634,6 +6777,11 @@
           if (garantieSel) state.garantieExtinsa = garantieSel.value;
           const civSel = document.getElementById("stat-civ");
           if (civSel) state.civ = civSel.value;
+          const termenPlataInput = document.getElementById("stat-termen-plata");
+          if (termenPlataInput)
+            state.termenPlata = termenPlataInput.value.trim();
+          const stadiuPlataSel = document.getElementById("stat-stadiu-plata");
+          if (stadiuPlataSel) state.stadiuPlata = stadiuPlataSel.value;
           incarcaSiAfiseaza();
         });
         document.getElementById("stat-reset").addEventListener("click", () => {
