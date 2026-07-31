@@ -220,6 +220,16 @@
         min-height: 0;
         max-height: none !important;
       }
+      .comenzi-shell {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .comenzi-list-flex {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+      }
     </style>
   </head>
   <body class="min-h-screen">
@@ -431,6 +441,12 @@
       }
       function inputBase() {
         return "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--teal)] focus:border-transparent";
+      }
+      function produsFieldLabel(txt) {
+        return `<label class="block text-[11px] font-medium text-slate-600 mb-0.5">${txt}</label>`;
+      }
+      function produsInputBase() {
+        return "w-full border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--teal)] focus:border-transparent";
       }
 
       function loginForm() {
@@ -2055,88 +2071,90 @@
         ).join("");
 
         overlay.innerHTML = `
-    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg fade-in my-auto">
+    <div class="bg-white rounded-2xl shadow-xl p-5 w-full max-w-lg fade-in my-auto">
       <div class="flex items-start justify-between mb-1">
-        <h2 class="text-lg font-bold">Adaugă produs nou</h2>
+        <h2 class="text-base font-bold">Adaugă produs nou</h2>
         <button type="button" id="add-produs-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
       </div>
-      <p class="text-sm text-slate-500 mb-5"></p>
-      <form id="form-add-produs" class="space-y-4">
-        <div>
-          ${fieldLabel("ID produs")}
-          <input type="text" value="${idProdus}" disabled class="${inputBase()} bg-slate-50 font-mono text-slate-500">
-        </div>
-        <div class="grid grid-cols-2 gap-3">
+      <p class="text-sm text-slate-500 mb-3"></p>
+      <form id="form-add-produs" class="space-y-2.5">
+        <div class="grid grid-cols-2 gap-2">
           <div>
-            ${fieldLabel("Agent")}
+            ${produsFieldLabel("ID produs")}
+            <input type="text" value="${idProdus}" disabled class="${produsInputBase()} bg-slate-50 font-mono text-slate-500">
+          </div>
+          <div>${produsFieldLabel("VIN")}<input type="text" id="add-vin" class="${produsInputBase()} font-mono"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            ${produsFieldLabel("Agent")}
             <div class="relative">
-              <input type="text" id="add-agent" class="${inputBase()}" placeholder="Caută sau scrie numele agentului" autocomplete="off">
+              <input type="text" id="add-agent" class="${produsInputBase()}" placeholder="Caută sau scrie numele agentului" autocomplete="off">
               <div id="add-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
           <div>
-            ${fieldLabel("Categorie produs")}
-            <select id="add-categorie" class="${inputBase()} ${prefillCategorieCustom ? "hidden" : ""}">
+            ${produsFieldLabel("Categorie produs")}
+            <select id="add-categorie" class="${produsInputBase()} ${prefillCategorieCustom ? "hidden" : ""}">
               <option value="">Alege...</option>
               ${categorieOptions}
               <option value="__alta__">Altă categorie</option>
             </select>
             <div id="add-categorie-alta-wrap" class="${prefillCategorieCustom ? "" : "hidden"} flex items-center gap-1">
-              <input type="text" id="add-categorie-alta" class="${inputBase()}" placeholder="Specifică" value="${prefillCategorieCustom ? esc(prefill.categorie) : ""}">
+              <input type="text" id="add-categorie-alta" class="${produsInputBase()}" placeholder="Specifică" value="${prefillCategorieCustom ? esc(prefill.categorie) : ""}">
               <button type="button" id="add-categorie-alta-back" class="text-slate-400 hover:text-slate-600 text-xs shrink-0" title="Alege din listă">↺</button>
             </div>
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>${fieldLabel("Marcă")}
+        <div class="grid grid-cols-2 gap-2">
+          <div>${produsFieldLabel("Marcă")}
             <div class="relative">
-              <input type="text" id="add-marca" class="${inputBase()}" autocomplete="off" value="${esc(prefill?.marca || "")}">
+              <input type="text" id="add-marca" class="${produsInputBase()}" autocomplete="off" value="${esc(prefill?.marca || "")}">
               <div id="add-marca-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
-          <div>${fieldLabel("Culoare")}<input type="text" id="add-culoare" class="${inputBase()}" value="${esc(prefill?.culoare || "")}"></div>
+          <div>${produsFieldLabel("Culoare")}<input type="text" id="add-culoare" class="${produsInputBase()}" value="${esc(prefill?.culoare || "")}"></div>
         </div>
-        <div>${fieldLabel("VIN")}<input type="text" id="add-vin" class="${inputBase()} font-mono"></div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>${fieldLabel("Preț de intrare (fără TVA)")}<input type="number" step="0.01" id="add-pret-intrare" class="${inputBase()} price-field"></div>
-          <div>${fieldLabel("Preț vânzare (fără TVA)")}<input type="number" step="0.01" id="add-pret-vanzare" class="${inputBase()} price-field"></div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${produsFieldLabel("Preț de intrare (fără TVA)")}<input type="number" step="0.01" id="add-pret-intrare" class="${produsInputBase()} price-field"></div>
+          <div>${produsFieldLabel("Preț vânzare (fără TVA)")}<input type="number" step="0.01" id="add-pret-vanzare" class="${produsInputBase()} price-field"></div>
         </div>
-        <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
-          <div>${fieldLabel("Adaos")}<input type="number" step="0.01" id="add-adaos" class="${inputBase()} calc-field font-semibold"></div>
-          <div>${fieldLabel("Alte costuri (fără TVA)")}<input type="number" step="0.01" id="add-alte-costuri" class="${inputBase()} price-field" value="0"></div>
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
+          <div>${produsFieldLabel("Adaos")}<input type="number" step="0.01" id="add-adaos" class="${produsInputBase()} calc-field font-semibold"></div>
+          <div>${produsFieldLabel("Alte costuri (fără TVA)")}<input type="number" step="0.01" id="add-alte-costuri" class="${produsInputBase()} price-field"></div>
         </div>
-        <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
-          <div>${fieldLabel("Total(fără TVA)")}<input type="number" step="0.01" id="add-total" class="${inputBase()} calc-field font-semibold"></div>
-          <div>${fieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="add-tva" class="${inputBase()} calc-field font-semibold"></div>
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
+          <div>${produsFieldLabel("Total(fără TVA)")}<input type="number" step="0.01" id="add-total" class="${produsInputBase()} calc-field font-semibold"></div>
+          <div>${produsFieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="add-tva" class="${produsInputBase()} calc-field font-semibold"></div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>${fieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="add-pret-recomandat" class="${inputBase()}"></div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${produsFieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="add-pret-recomandat" class="${produsInputBase()}"></div>
           <div>
-            <div class="flex items-center justify-between mb-1">
-              <label class="block text-sm font-medium text-slate-700">Discount</label>
+            <div class="flex items-center justify-between mb-0.5">
+              <label class="block text-[11px] font-medium text-slate-600">Discount</label>
               <div class="flex gap-1">
                 <button type="button" data-tip="suma" class="add-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border btn-primary" style="border-color:var(--line)">Sumă</button>
                 <button type="button" data-tip="procent" class="add-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border" style="border-color:var(--line)">%</button>
               </div>
             </div>
-            <input type="number" step="0.01" min="0" id="add-discount" class="${inputBase()}" value="0">
+            <input type="number" step="0.01" min="0" id="add-discount" class="${produsInputBase()}">
             <input type="hidden" id="add-discount-tip" value="suma">
           </div>
         </div>
         <div>
           <div class="flex items-center justify-between">
-            <label class="block text-sm font-medium text-slate-700">C.I.V.</label>
+            <label class="block text-[11px] font-medium text-slate-600">C.I.V.</label>
             <div class="flex gap-1">
-              <button type="button" data-civ="nu" class="add-civ-btn rounded-md px-3 py-2 text-xs font-medium border btn-primary" style="border-color:var(--line)">Nu</button>
-              <button type="button" data-civ="da" class="add-civ-btn rounded-md px-3 py-2 text-xs font-medium border" style="border-color:var(--line)">Da</button>
+              <button type="button" data-civ="nu" class="add-civ-btn rounded-md px-2.5 py-1 text-xs font-medium border btn-primary" style="border-color:var(--line)">Nu</button>
+              <button type="button" data-civ="da" class="add-civ-btn rounded-md px-2.5 py-1 text-xs font-medium border" style="border-color:var(--line)">Da</button>
             </div>
           </div>
           <input type="hidden" id="add-civ" value="nu">
         </div>
         <p class="text-xs text-slate-400"></p>
         <div class="flex gap-2 pt-1">
-          <button type="button" id="add-produs-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
-          <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Salvează produsul</button>
+          <button type="button" id="add-produs-cancel" class="flex-1 rounded-lg py-2 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
+          <button type="submit" class="flex-1 btn-primary rounded-lg py-2 text-sm">Salvează produsul</button>
         </div>
         <p id="add-produs-msg" class="text-sm text-center"></p>
       </form>
@@ -2321,87 +2339,89 @@
         ).join("");
 
         overlay.innerHTML = `
-    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg fade-in my-auto">
+    <div class="bg-white rounded-2xl shadow-xl p-5 w-full max-w-lg fade-in my-auto">
       <div class="flex items-start justify-between mb-1">
-        <h2 class="text-lg font-bold">Editează produsul</h2>
+        <h2 class="text-base font-bold">Editează produsul</h2>
         <button type="button" id="edit-produs-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
       </div>
-      <p class="text-sm text-slate-500 mb-5">Modifică datele produsului.</p>
-      <form id="form-edit-produs" class="space-y-4">
-        <div>
-          ${fieldLabel("ID produs")}
-          <input type="text" value="${esc(p.id_produs)}" disabled class="${inputBase()} bg-slate-50 font-mono text-slate-500">
-        </div>
-        <div class="grid grid-cols-2 gap-3">
+      <p class="text-sm text-slate-500 mb-3">Modifică datele produsului.</p>
+      <form id="form-edit-produs" class="space-y-2.5">
+        <div class="grid grid-cols-2 gap-2">
           <div>
-            ${fieldLabel("Agent")}
+            ${produsFieldLabel("ID produs")}
+            <input type="text" value="${esc(p.id_produs)}" disabled class="${produsInputBase()} bg-slate-50 font-mono text-slate-500">
+          </div>
+          <div>${produsFieldLabel("VIN")}<input type="text" id="edit-vin" class="${produsInputBase()} font-mono" value="${esc(p.vin || "")}"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            ${produsFieldLabel("Agent")}
             <div class="relative">
-              <input type="text" id="edit-agent" class="${inputBase()}" placeholder="Caută sau scrie numele agentului" autocomplete="off" value="${esc(p.agent || "")}">
+              <input type="text" id="edit-agent" class="${produsInputBase()}" placeholder="Caută sau scrie numele agentului" autocomplete="off" value="${esc(p.agent || "")}">
               <div id="edit-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
           <div>
-            ${fieldLabel("Categorie produs")}
-            <select id="edit-categorie" class="${inputBase()} ${categorieCustom ? "hidden" : ""}">
+            ${produsFieldLabel("Categorie produs")}
+            <select id="edit-categorie" class="${produsInputBase()} ${categorieCustom ? "hidden" : ""}">
               <option value="">Alege...</option>
               ${categorieOptions}
               <option value="__alta__">Altă categorie</option>
             </select>
             <div id="edit-categorie-alta-wrap" class="${categorieCustom ? "" : "hidden"} flex items-center gap-1">
-              <input type="text" id="edit-categorie-alta" class="${inputBase()}" placeholder="Specifică" value="${categorieCustom ? esc(p.categorie) : ""}">
+              <input type="text" id="edit-categorie-alta" class="${produsInputBase()}" placeholder="Specifică" value="${categorieCustom ? esc(p.categorie) : ""}">
               <button type="button" id="edit-categorie-alta-back" class="text-slate-400 hover:text-slate-600 text-xs shrink-0" title="Alege din listă">↺</button>
             </div>
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>${fieldLabel("Marcă")}
+        <div class="grid grid-cols-2 gap-2">
+          <div>${produsFieldLabel("Marcă")}
             <div class="relative">
-              <input type="text" id="edit-marca" class="${inputBase()}" autocomplete="off" value="${esc(p.marca || "")}">
+              <input type="text" id="edit-marca" class="${produsInputBase()}" autocomplete="off" value="${esc(p.marca || "")}">
               <div id="edit-marca-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
-          <div>${fieldLabel("Culoare")}<input type="text" id="edit-culoare" class="${inputBase()}" value="${esc(p.culoare || "")}"></div>
+          <div>${produsFieldLabel("Culoare")}<input type="text" id="edit-culoare" class="${produsInputBase()}" value="${esc(p.culoare || "")}"></div>
         </div>
-        <div>${fieldLabel("VIN")}<input type="text" id="edit-vin" class="${inputBase()} font-mono" value="${esc(p.vin || "")}"></div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>${fieldLabel("Preț de intrare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-intrare" class="${inputBase()} price-field" value="${p.pret_intrare ?? ""}"></div>
-          <div>${fieldLabel("Preț vânzare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-vanzare" class="${inputBase()} price-field" value="${p.pret_vanzare ?? ""}"></div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${produsFieldLabel("Preț de intrare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-intrare" class="${produsInputBase()} price-field" value="${p.pret_intrare ?? ""}"></div>
+          <div>${produsFieldLabel("Preț vânzare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-vanzare" class="${produsInputBase()} price-field" value="${p.pret_vanzare ?? ""}"></div>
         </div>
-        <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
-          <div>${fieldLabel("Adaos")}<input type="number" step="0.01" id="edit-adaos" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.adaos)}"></div>
-          <div>${fieldLabel("Alte costuri (fără TVA)")}<input type="number" step="0.01" id="edit-alte-costuri" class="${inputBase()} price-field" value="${p.alte_costuri ?? 0}"></div>
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
+          <div>${produsFieldLabel("Adaos")}<input type="number" step="0.01" id="edit-adaos" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.adaos)}"></div>
+          <div>${produsFieldLabel("Alte costuri (fără TVA)")}<input type="number" step="0.01" id="edit-alte-costuri" class="${produsInputBase()} price-field" value="${p.alte_costuri ?? ""}"></div>
         </div>
-        <div class="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 text-sm">
-          <div>${fieldLabel("Total (fără TVA)")}<input type="number" step="0.01" id="edit-total" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.total_fara_tva)}"></div>
-          <div>${fieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="edit-tva" class="${inputBase()} calc-field font-semibold" value="${fmtNum(p.pret_cu_tva)}"></div>
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
+          <div>${produsFieldLabel("Total (fără TVA)")}<input type="number" step="0.01" id="edit-total" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.total_fara_tva)}"></div>
+          <div>${produsFieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="edit-tva" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.pret_cu_tva)}"></div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>${fieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="edit-pret-recomandat" class="${inputBase()}" value="${p.pret_recomandat ?? ""}"></div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${produsFieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="edit-pret-recomandat" class="${produsInputBase()}" value="${p.pret_recomandat ?? ""}"></div>
           <div>
-            <div class="flex items-center justify-between mb-1">
-              <label class="block text-sm font-medium text-slate-700">Discount</label>
+            <div class="flex items-center justify-between mb-0.5">
+              <label class="block text-[11px] font-medium text-slate-600">Discount</label>
               <div class="flex gap-1">
                 <button type="button" data-tip="suma" class="edit-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border ${(p.discount_tip || "suma") === "suma" ? "btn-primary" : ""}" style="border-color:var(--line)">Sumă</button>
                 <button type="button" data-tip="procent" class="edit-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border ${p.discount_tip === "procent" ? "btn-primary" : ""}" style="border-color:var(--line)">%</button>
               </div>
             </div>
-            <input type="number" step="0.01" min="0" id="edit-discount" class="${inputBase()}" value="${p.discount ?? 0}">
+            <input type="number" step="0.01" min="0" id="edit-discount" class="${produsInputBase()}" value="${p.discount ?? ""}">
             <input type="hidden" id="edit-discount-tip" value="${p.discount_tip || "suma"}">
           </div>
         </div>
         <div>
           <div class="flex items-center justify-between">
-            <label class="block text-sm font-medium text-slate-700">C.I.V.</label>
+            <label class="block text-[11px] font-medium text-slate-600">C.I.V.</label>
             <div class="flex gap-1">
-              <button type="button" data-civ="nu" class="edit-civ-btn rounded-md px-3 py-2 text-xs font-medium border ${!p.civ ? "btn-primary" : ""}" style="border-color:var(--line)">Nu</button>
-              <button type="button" data-civ="da" class="edit-civ-btn rounded-md px-3 py-2 text-xs font-medium border ${p.civ ? "btn-primary" : ""}" style="border-color:var(--line)">Da</button>
+              <button type="button" data-civ="nu" class="edit-civ-btn rounded-md px-2.5 py-1 text-xs font-medium border ${!p.civ ? "btn-primary" : ""}" style="border-color:var(--line)">Nu</button>
+              <button type="button" data-civ="da" class="edit-civ-btn rounded-md px-2.5 py-1 text-xs font-medium border ${p.civ ? "btn-primary" : ""}" style="border-color:var(--line)">Da</button>
             </div>
           </div>
           <input type="hidden" id="edit-civ" value="${p.civ ? "da" : "nu"}">
         </div>
         <div class="flex gap-2 pt-1">
-          <button type="button" id="edit-produs-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
-          <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Salvează modificările</button>
+          <button type="button" id="edit-produs-cancel" class="flex-1 rounded-lg py-2 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
+          <button type="submit" class="flex-1 btn-primary rounded-lg py-2 text-sm">Salvează modificările</button>
         </div>
         <p id="edit-produs-msg" class="text-sm text-center"></p>
       </form>
@@ -3765,12 +3785,21 @@
         };
 
         container.innerHTML = `
-    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
+    <div class="comenzi-shell" id="comenzi-shell">
+    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
       <p class="text-sm text-slate-500">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"}</p>
       <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Comandă nouă</button>
     </div>
-    ${statusFilterChipsHtml(comenziStatusFilter)}
-    <div class="space-y-1.5" id="comenzi-list"></div>`;
+    <div class="shrink-0">${statusFilterChipsHtml(comenziStatusFilter)}</div>
+    <div class="space-y-1.5 comenzi-list-flex" id="comenzi-list"></div>
+    </div>`;
+
+        ajusteazaInaltimeComenzi("comenzi-shell");
+        if (comenziResizeHandler) {
+          window.removeEventListener("resize", comenziResizeHandler);
+        }
+        comenziResizeHandler = () => ajusteazaInaltimeComenzi("comenzi-shell");
+        window.addEventListener("resize", comenziResizeHandler);
 
         bindStatusFilterChips(container, () => renderComenziAdmin(container));
 
@@ -3877,12 +3906,21 @@
         );
 
         container.innerHTML = `
-    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
+    <div class="comenzi-shell" id="comenzi-shell">
+    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
       <p class="text-sm text-slate-500">${myComenzi.length} ${myComenzi.length === 1 ? "comandă" : "comenzi"} create de tine</p>
       <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm" ${magazineAsignate.length ? "" : 'disabled title="Nu ai niciun magazin alocat"'}>+ Comandă nouă</button>
     </div>
-    ${statusFilterChipsHtml(comenziStatusFilter)}
-    <div class="space-y-1.5" id="comenzi-list"></div>`;
+    <div class="shrink-0">${statusFilterChipsHtml(comenziStatusFilter)}</div>
+    <div class="space-y-1.5 comenzi-list-flex" id="comenzi-list"></div>
+    </div>`;
+
+        ajusteazaInaltimeComenzi("comenzi-shell");
+        if (comenziResizeHandler) {
+          window.removeEventListener("resize", comenziResizeHandler);
+        }
+        comenziResizeHandler = () => ajusteazaInaltimeComenzi("comenzi-shell");
+        window.addEventListener("resize", comenziResizeHandler);
 
         bindStatusFilterChips(container, () => renderComenziAgent(container));
 
@@ -3988,7 +4026,8 @@
         const marcaCategorieMap = buildMarcaCategorieMap(produse || []);
 
         container.innerHTML = `
-    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
+    <div class="comenzi-shell" id="comenzi-shell">
+    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
       <p class="text-sm text-slate-500">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"} pentru magazinul tău</p>
       ${
         esteAlocatUnuiHub
@@ -3996,8 +4035,16 @@
           : `<button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Comandă nouă</button>`
       }
     </div>
-    ${statusFilterChipsHtml(comenziStatusFilter)}
-    <div class="space-y-1.5" id="comenzi-list"></div>`;
+    <div class="shrink-0">${statusFilterChipsHtml(comenziStatusFilter)}</div>
+    <div class="space-y-1.5 comenzi-list-flex" id="comenzi-list"></div>
+    </div>`;
+
+        ajusteazaInaltimeComenzi("comenzi-shell");
+        if (comenziResizeHandler) {
+          window.removeEventListener("resize", comenziResizeHandler);
+        }
+        comenziResizeHandler = () => ajusteazaInaltimeComenzi("comenzi-shell");
+        window.addEventListener("resize", comenziResizeHandler);
 
         bindStatusFilterChips(container, () => renderComenziMagazin(container));
 
@@ -4104,12 +4151,21 @@
         const marcaCategorieMap = buildMarcaCategorieMap(produse || []);
 
         container.innerHTML = `
-    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
+    <div class="comenzi-shell" id="comenzi-shell">
+    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
       <p class="text-sm text-slate-500">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"} pentru magazinele alocate</p>
       <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Comandă nouă</button>
     </div>
-    ${statusFilterChipsHtml(comenziStatusFilter)}
-    <div class="space-y-1.5" id="comenzi-list"></div>`;
+    <div class="shrink-0">${statusFilterChipsHtml(comenziStatusFilter)}</div>
+    <div class="space-y-1.5 comenzi-list-flex" id="comenzi-list"></div>
+    </div>`;
+
+        ajusteazaInaltimeComenzi("comenzi-shell");
+        if (comenziResizeHandler) {
+          window.removeEventListener("resize", comenziResizeHandler);
+        }
+        comenziResizeHandler = () => ajusteazaInaltimeComenzi("comenzi-shell");
+        window.addEventListener("resize", comenziResizeHandler);
 
         bindStatusFilterChips(container, () => renderComenziHub(container));
 
@@ -5754,6 +5810,14 @@
       let statisticiResizeHandler = null;
       function ajusteazaInaltimeStatistici() {
         const shell = document.getElementById("stat-shell");
+        if (!shell) return;
+        const top = shell.getBoundingClientRect().top;
+        const disponibil = window.innerHeight - top - 16;
+        shell.style.height = Math.max(disponibil, 220) + "px";
+      }
+      let comenziResizeHandler = null;
+      function ajusteazaInaltimeComenzi(shellId) {
+        const shell = document.getElementById(shellId);
         if (!shell) return;
         const top = shell.getBoundingClientRect().top;
         const disponibil = window.innerHeight - top - 16;
