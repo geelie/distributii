@@ -1021,17 +1021,18 @@
 
         container.innerHTML = `
     <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
-      <table class="w-full text-sm min-w-[980px]">
+      <table class="w-full text-sm min-w-[900px]">
         <thead>
           <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
-            <th class="px-4 py-3 font-medium">Email</th>
-            <th class="px-4 py-3 font-medium">Rol</th>
-            <th class="px-4 py-3 font-medium">Nume</th>
-            <th class="px-4 py-3 font-medium">Telefon</th>
-            <th class="px-4 py-3 font-medium">Filială</th>
-            <th class="px-4 py-3 font-medium">Adresă</th>
-            <th class="px-4 py-3 font-medium">Magazine alocate</th>
-            <th class="px-4 py-3 font-medium"></th>
+            <th class="px-2 py-2 font-medium">Nr</th>
+            <th class="px-3 py-2 font-medium">Email</th>
+            <th class="px-3 py-2 font-medium">Rol</th>
+            <th class="px-3 py-2 font-medium">Nume</th>
+            <th class="px-3 py-2 font-medium">Telefon</th>
+            <th class="px-3 py-2 font-medium">Filială</th>
+            <th class="px-3 py-2 font-medium">Adresă</th>
+            <th class="px-3 py-2 font-medium">Magazine alocate</th>
+            <th class="px-3 py-2 font-medium"></th>
           </tr>
         </thead>
         <tbody id="user-rows"></tbody>
@@ -1040,9 +1041,10 @@
 
         const tbody = document.getElementById("user-rows");
         tbody.innerHTML = profiles
-          .map((p) =>
+          .map((p, i) =>
             userRow(
               p,
+              i + 1,
               magazine,
               assignments || [],
               hubAssignments || [],
@@ -1052,11 +1054,21 @@
           )
           .join("");
 
-        profiles.forEach((p) => bindUserRow(p, magazine, viewerIsSuperadmin));
+        profiles.forEach((p) =>
+          bindUserRow(
+            p,
+            magazine,
+            viewerIsSuperadmin,
+            assignments || [],
+            hubAssignments || [],
+            profiles,
+          ),
+        );
       }
 
       function userRow(
         p,
+        nr,
         magazine,
         assignments,
         hubAssignments,
@@ -1077,12 +1089,13 @@
 
         return `
   <tr class="border-b last:border-0 align-top" style="border-color:var(--line)" data-row="${p.id}">
-    <td class="px-4 py-3">
-      <div class="font-medium text-slate-800">${esc(p.email)}</div>
-      <div class="text-xs text-slate-400">${new Date(p.created_at).toLocaleDateString("ro-RO")}</div>
+    <td class="px-2 py-2 text-slate-400 text-xs">${nr}</td>
+    <td class="px-3 py-2">
+      <div class="font-medium text-slate-800 text-sm leading-tight">${esc(p.email)}</div>
+      <div class="text-[11px] text-slate-400 leading-tight">${new Date(p.created_at).toLocaleDateString("ro-RO")}</div>
     </td>
-    <td class="px-4 py-3">
-      <select data-field="role" data-id="${p.id}" class="role-select border rounded-md px-2 py-1.5 text-sm" ${lockedForViewer ? 'disabled title="Doar un super admin poate modifica rolul unui super admin"' : ""}>
+    <td class="px-3 py-2">
+      <select data-field="role" data-id="${p.id}" class="role-select border rounded-md px-2 py-1 text-xs" ${lockedForViewer ? 'disabled title="Doar un super admin poate modifica rolul unui super admin"' : ""}>
         <option value="" ${!p.role ? "selected" : ""}>Fără rol</option>
         <option value="magazin" ${p.role === "magazin" ? "selected" : ""}>Magazin</option>
         <option value="magazin_hub" ${p.role === "magazin_hub" ? "selected" : ""}>Magazin-HUB</option>
@@ -1091,67 +1104,41 @@
         <option value="superadmin" ${p.role === "superadmin" ? "selected" : ""} ${!viewerIsSuperadmin ? "disabled" : ""}>Super Admin</option>
       </select>
     </td>
-    <td class="px-4 py-3">
+    <td class="px-3 py-2">
       <input data-field="nume" data-id="${p.id}" type="text" value="${esc(p.nume || "")}"
         placeholder="${isAgent ? "Nume agent" : isMagazin ? "Ex: SatAn" : isHub ? "Ex: Sat An (HUB)" : p.role === "admin" || p.role === "superadmin" ? "Nume (opțional)" : "—"}"
-        class="nume-input border rounded-md px-2 py-1.5 text-sm w-32" ${!p.role ? "disabled" : ""}>
+        class="nume-input border rounded-md px-2 py-1 text-xs w-28" ${!p.role ? "disabled" : ""}>
     </td>
-    <td class="px-4 py-3">
+    <td class="px-3 py-2">
       <input data-field="telefon" data-id="${p.id}" type="tel" value="${esc(p.telefon || "")}"
         placeholder="Opțional"
-        class="telefon-input border rounded-md px-2 py-1.5 text-sm w-28" ${!p.role ? "disabled" : ""}>
+        class="telefon-input border rounded-md px-2 py-1 text-xs w-24" ${!p.role ? "disabled" : ""}>
     </td>
-    <td class="px-4 py-3">
+    <td class="px-3 py-2">
       <input data-field="filiala" data-id="${p.id}" type="text" value="${esc(p.filiala || "")}"
         placeholder="Ex: Carei"
-        class="filiala-input border rounded-md px-2 py-1.5 text-sm w-28" ${!isMagazin ? "disabled" : ""}>
+        class="filiala-input border rounded-md px-2 py-1 text-xs w-24" ${!isMagazin ? "disabled" : ""}>
     </td>
-    <td class="px-4 py-3">
+    <td class="px-3 py-2">
       ${
         isMagazin
           ? `
-        <button data-billing="${p.id}" class="billing-btn whitespace-nowrap w-20 h-[34px] flex flex-col items-center justify-center rounded-md text-center text-[10px] leading-[1.1] font-semibold ${p.adresa_facturare ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}">
+        <button data-billing="${p.id}" class="billing-btn whitespace-nowrap w-16 h-[28px] flex flex-col items-center justify-center rounded-md text-center text-[9px] leading-[1.1] font-semibold ${p.adresa_facturare ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}">
           ${p.adresa_facturare ? "✓ Adresă<br>facturare" : "+ Adaugă<br>adresă"}
         </button>
       `
           : '<span class="text-slate-300 text-xs">—</span>'
       }
     </td>
-    <td class="px-4 py-3">
-      <div class="magazine-box ${isAgent || isHub ? "" : "opacity-30 pointer-events-none"} max-h-24 overflow-y-auto space-y-1 w-44">
-        ${
-          magazine.length === 0
-            ? '<span class="text-xs text-slate-400">Niciun magazin disponibil</span>'
-            : magazine
-                .map((m) => {
-                  const assignedToThis = assignedIds.includes(m.id);
-                  const otherAssignment = relAssignments.find(
-                    (a) => a.magazin_id === m.id && a[relIdField] !== p.id,
-                  );
-                  const lockedByOther = !!otherAssignment && !assignedToThis;
-                  const otherOwner = lockedByOther
-                    ? (allProfiles || []).find(
-                        (ap) => ap.id === otherAssignment[relIdField],
-                      )
-                    : null;
-                  const otherLabel = otherOwner
-                    ? otherOwner.nume || otherOwner.email
-                    : isHub
-                      ? "alt HUB"
-                      : "alt agent";
-                  return `
-          <label class="flex items-center gap-1.5 text-xs ${lockedByOther ? "opacity-40 cursor-not-allowed" : ""}" ${lockedByOther ? `title="Deja alocat lui ${esc(otherLabel)}"` : ""}>
-            <input type="checkbox" class="mag-check" data-magazin-id="${m.id}" ${assignedToThis ? "checked" : ""} ${lockedByOther ? "disabled" : ""}>
-            <span>${esc(m.nume || m.email)}${m.filiala ? " - " + esc(m.filiala) : ""}${lockedByOther ? ` <em class="not-italic text-slate-400">(${esc(otherLabel)})</em>` : ""}</span>
-          </label>`;
-                })
-                .join("")
-        }
-      </div>
+    <td class="px-3 py-2 magazine-alocate-cell w-28">
+      <span class="text-slate-300 text-xs magazine-none-placeholder ${isAgent || isHub ? "hidden" : ""}">—</span>
+      <button type="button" class="magazine-alocate-btn rounded-md px-2 py-1 text-xs font-medium border w-full text-left truncate ${isAgent || isHub ? "" : "hidden"}" style="border-color:var(--line)">
+        ${assignedIds.length ? assignedIds.length + " magazin" + (assignedIds.length === 1 ? "" : "e") + " alocat" + (assignedIds.length === 1 ? "" : "e") : "Alege magazine"}
+      </button>
     </td>
-    <td class="px-4 py-3 whitespace-nowrap">
-      <button data-save="${p.id}" class="save-btn btn-primary rounded-md px-3 py-1.5 text-xs" ${lockedForViewer ? "disabled" : ""}>Salvează</button>
-      <button data-delete="${p.id}" class="delete-btn rounded-md px-3 py-1.5 text-xs font-semibold ml-1 ${lockedForViewer || isSelf ? "bg-slate-100 text-slate-300 cursor-not-allowed" : "bg-red-50 text-red-600 hover:bg-red-100"}"
+    <td class="px-3 py-2 whitespace-nowrap">
+      <button data-save="${p.id}" class="save-btn btn-primary rounded-md px-2.5 py-1 text-xs" ${lockedForViewer ? "disabled" : ""}>Salvează</button>
+      <button data-delete="${p.id}" class="delete-btn rounded-md px-2.5 py-1 text-xs font-semibold ml-1 ${lockedForViewer || isSelf ? "bg-slate-100 text-slate-300 cursor-not-allowed" : "bg-red-50 text-red-600 hover:bg-red-100"}"
         ${lockedForViewer || isSelf ? "disabled" : ""}
         title="${isSelf ? "Nu îți poți șterge propriul cont din această interfață" : lockedForViewer ? "Doar un super admin poate șterge un cont de super admin" : "Șterge definitiv acest cont"}">
         Șterge cont
@@ -1508,7 +1495,16 @@
     ${renderProductsTableHtml(stocDisponibil, agenti, magazine, reservedIds)}`;
 
         stocDisponibil.forEach((p) =>
-          bindProductRow(p, agenti, magazine, agentMagazinMap, marci, refresh),
+          bindProductRow(
+            p,
+            agenti,
+            magazine,
+            agentMagazinMap,
+            marci,
+            refresh,
+            null,
+            reservedIds.has(p.id),
+          ),
         );
 
         document
@@ -1799,12 +1795,22 @@
         marci,
         refresh,
         comandaCtx,
+        isReserved,
       ) {
         const row = document.querySelector(`tr[data-prow="${p.id}"]`);
         if (!row) return;
 
         row.querySelector(".produs-id-link").addEventListener("click", () => {
-          renderEditProductModal(p, agenti, magazine, refresh, marci);
+          const poateVanzareDirecta =
+            !isReserved && !p.magazin_id && !p.vanzare_directa && !p.vandut;
+          renderEditProductModal(
+            p,
+            agenti,
+            magazine,
+            refresh,
+            marci,
+            poateVanzareDirecta,
+          );
         });
 
         const comandaLink = row.querySelector(".comanda-produs-link");
@@ -2324,7 +2330,14 @@
           });
       }
 
-      function renderEditProductModal(p, agenti, magazine, onSaved, marci) {
+      function renderEditProductModal(
+        p,
+        agenti,
+        magazine,
+        onSaved,
+        marci,
+        poateVanzareDirecta,
+      ) {
         const overlay = document.createElement("div");
         overlay.id = "edit-produs-overlay";
         overlay.className =
@@ -2419,6 +2432,13 @@
           </div>
           <input type="hidden" id="edit-civ" value="${p.civ ? "da" : "nu"}">
         </div>
+        ${
+          poateVanzareDirecta &&
+          (currentProfile.role === "admin" ||
+            currentProfile.role === "superadmin")
+            ? `<button type="button" id="edit-vanzare-directa-btn" class="w-full rounded-lg py-2 text-sm font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200">Vânzare directă</button>`
+            : ""
+        }
         <div class="flex gap-2 pt-1">
           <button type="button" id="edit-produs-cancel" class="flex-1 rounded-lg py-2 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
           <button type="submit" class="flex-1 btn-primary rounded-lg py-2 text-sm">Salvează modificările</button>
@@ -2437,6 +2457,16 @@
         overlay.addEventListener("click", (e) => {
           if (e.target === overlay) overlay.remove();
         });
+
+        const vanzareDirectaBtn = document.getElementById(
+          "edit-vanzare-directa-btn",
+        );
+        if (vanzareDirectaBtn) {
+          vanzareDirectaBtn.addEventListener("click", () => {
+            overlay.remove();
+            deschideModalVanzareProdus(p, onSaved, true);
+          });
+        }
 
         attachAgentAutocomplete(
           document.getElementById("edit-agent"),
@@ -2633,6 +2663,7 @@
         { key: "onorata", label: "Onorată" },
       ];
       let comenziStatusFilter = [];
+      let bateriiFiltruActiv = "toate";
 
       function statusFilterChipsHtml(selected) {
         const chip = (key, label, active) =>
@@ -2714,7 +2745,11 @@
             .map((x) => x.produs_id),
         );
         return (context.produse || []).filter(
-          (p) => !p.magazin_id && !reserved.has(p.id),
+          (p) =>
+            !p.magazin_id &&
+            !p.vandut &&
+            !p.vanzare_directa &&
+            !reserved.has(p.id),
         );
       }
 
@@ -3126,9 +3161,7 @@
               agent: agentVal,
               creat_de: currentUser.id,
               status: "in_asteptare",
-              termen_plata: termenPlataVal
-                ? parseInt(termenPlataVal, 10)
-                : null,
+              termen_plata: termenPlataVal ? parseInt(termenPlataVal, 10) : null,
               observatii:
                 document.getElementById("comanda-observatii").value.trim() ||
                 null,
@@ -3712,7 +3745,9 @@
                 "Alege stadiul achitării (integral sau parțial).";
               return;
             }
-            const sumaInput = document.getElementById("comanda-suma-achitata");
+            const sumaInput = document.getElementById(
+              "comanda-suma-achitata",
+            );
             const sumaVal =
               sumaInput && sumaInput.value.trim() !== ""
                 ? parseFloat(sumaInput.value)
@@ -4596,8 +4631,11 @@
             const label = `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`;
             return `
       <div class="mb-6">
-        <h3 class="text-sm font-semibold text-slate-700 mb-2">${esc(label)} <span class="text-slate-400 font-normal">(${stocMagazin.length} produse)</span></h3>
-        <div class="bg-white rounded-xl border tabel-fix-wrap tabel-fix-wrap-nested" style="border-color:var(--line)">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2 cursor-pointer select-none" data-toggle-stoc="${m.id}">
+          <span class="stoc-toggle-icon inline-flex items-center justify-center w-5 h-5 rounded-full border text-xs font-bold leading-none" style="border-color:var(--line)">+</span>
+          <span>${esc(label)} <span class="text-slate-400 font-normal">(${stocMagazin.length} produse)</span></span>
+        </h3>
+        <div class="bg-white rounded-xl border tabel-fix-wrap tabel-fix-wrap-nested hidden" data-stoc-panel="${m.id}" style="border-color:var(--line)">
           <table class="w-full text-sm min-w-[900px]">
             <thead>
               <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
@@ -4657,6 +4695,19 @@
           if (!link) return;
           link.addEventListener("click", () => {
             deschideComandaInitiala(comandaInfo, linii || [], profiles || []);
+          });
+        });
+
+        container.querySelectorAll("[data-toggle-stoc]").forEach((h) => {
+          h.addEventListener("click", () => {
+            const id = h.dataset.toggleStoc;
+            const panel = container.querySelector(
+              `[data-stoc-panel="${id}"]`,
+            );
+            const icon = h.querySelector(".stoc-toggle-icon");
+            if (!panel) return;
+            const isHidden = panel.classList.toggle("hidden");
+            if (icon) icon.textContent = isHidden ? "+" : "-";
           });
         });
       }
@@ -4721,8 +4772,11 @@
             const label = `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`;
             return `
       <div class="mb-6">
-        <h3 class="text-sm font-semibold text-slate-700 mb-2">${esc(label)} <span class="text-slate-400 font-normal">(${stocMagazin.length} produse)</span></h3>
-        <div class="bg-white rounded-xl border tabel-fix-wrap tabel-fix-wrap-nested" style="border-color:var(--line)">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2 cursor-pointer select-none" data-toggle-stoc="${m.id}">
+          <span class="stoc-toggle-icon inline-flex items-center justify-center w-5 h-5 rounded-full border text-xs font-bold leading-none" style="border-color:var(--line)">+</span>
+          <span>${esc(label)} <span class="text-slate-400 font-normal">(${stocMagazin.length} produse)</span></span>
+        </h3>
+        <div class="bg-white rounded-xl border tabel-fix-wrap tabel-fix-wrap-nested hidden" data-stoc-panel="${m.id}" style="border-color:var(--line)">
           <table class="w-full text-sm min-w-[900px]">
             <thead>
               <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
@@ -4784,6 +4838,19 @@
             deschideComandaInitiala(comandaInfo, linii || [], profiles || []);
           });
         });
+
+        container.querySelectorAll("[data-toggle-stoc]").forEach((h) => {
+          h.addEventListener("click", () => {
+            const id = h.dataset.toggleStoc;
+            const panel = container.querySelector(
+              `[data-stoc-panel="${id}"]`,
+            );
+            const icon = h.querySelector(".stoc-toggle-icon");
+            if (!panel) return;
+            const isHidden = panel.classList.toggle("hidden");
+            if (icon) icon.textContent = isHidden ? "+" : "-";
+          });
+        });
       }
 
       function renderAgentComenziTab(container) {
@@ -4807,7 +4874,14 @@
         activate("comenzi");
       }
 
-      function bindUserRow(p, magazine, viewerIsSuperadmin) {
+      function bindUserRow(
+        p,
+        magazine,
+        viewerIsSuperadmin,
+        assignments,
+        hubAssignments,
+        allProfiles,
+      ) {
         const row = document.querySelector(`tr[data-row="${p.id}"]`);
         if (!row) return;
 
@@ -4815,9 +4889,32 @@
         const numeInput = row.querySelector(".nume-input");
         const telefonInput = row.querySelector(".telefon-input");
         const filialaInput = row.querySelector(".filiala-input");
-        const magBox = row.querySelector(".magazine-box");
+        const magBtn = row.querySelector(".magazine-alocate-btn");
+        const magPlaceholder = row.querySelector(".magazine-none-placeholder");
         const deleteBtn = row.querySelector(".delete-btn");
         const billingBtn = row.querySelector(".billing-btn");
+
+        const isHub = p.role === "magazin_hub";
+        const relAssignments = isHub ? hubAssignments || [] : assignments || [];
+        const relIdField = isHub ? "hub_id" : "agent_id";
+        const assignedIds = relAssignments
+          .filter((a) => a[relIdField] === p.id)
+          .map((a) => a.magazin_id);
+
+        if (magBtn) {
+          magBtn._selectedIds = new Set(assignedIds);
+          magBtn.addEventListener("click", () => {
+            openMagazineAlocateModal(
+              p,
+              magazine,
+              magBtn,
+              relAssignments,
+              relIdField,
+              allProfiles,
+              isHub,
+            );
+          });
+        }
 
         if (billingBtn) {
           billingBtn.addEventListener("click", () => {
@@ -4863,9 +4960,9 @@
           numeInput.disabled = !role;
           telefonInput.disabled = !role;
           filialaInput.disabled = role !== "magazin";
-          if (role === "agent" || role === "magazin_hub")
-            magBox.classList.remove("opacity-30", "pointer-events-none");
-          else magBox.classList.add("opacity-30", "pointer-events-none");
+          const showMag = role === "agent" || role === "magazin_hub";
+          if (magBtn) magBtn.classList.toggle("hidden", !showMag);
+          if (magPlaceholder) magPlaceholder.classList.toggle("hidden", showMag);
         });
 
         row.querySelector(".save-btn").addEventListener("click", async () => {
@@ -4912,13 +5009,14 @@
             return;
           }
 
+          const checkedMagazine = magBtn
+            ? Array.from(magBtn._selectedIds || [])
+            : [];
+
           if (role === "agent") {
-            const checked = Array.from(
-              row.querySelectorAll(".mag-check:checked"),
-            ).map((c) => c.dataset.magazinId);
             await supa.from("agent_magazine").delete().eq("agent_id", p.id);
-            if (checked.length) {
-              const rows = checked.map((magId) => ({
+            if (checkedMagazine.length) {
+              const rows = checkedMagazine.map((magId) => ({
                 agent_id: p.id,
                 magazin_id: magId,
               }));
@@ -4932,12 +5030,9 @@
                 );
             }
           } else if (role === "magazin_hub") {
-            const checked = Array.from(
-              row.querySelectorAll(".mag-check:checked"),
-            ).map((c) => c.dataset.magazinId);
             await supa.from("hub_magazine").delete().eq("hub_id", p.id);
-            if (checked.length) {
-              const rows = checked.map((magId) => ({
+            if (checkedMagazine.length) {
+              const rows = checkedMagazine.map((magId) => ({
                 hub_id: p.id,
                 magazin_id: magId,
               }));
@@ -4956,6 +5051,108 @@
           btn.disabled = false;
           btn.textContent = "Salvează";
         });
+      }
+
+      function openMagazineAlocateModal(
+        p,
+        magazine,
+        btn,
+        relAssignments,
+        relIdField,
+        allProfiles,
+        isHub,
+      ) {
+        const overlay = document.createElement("div");
+        overlay.id = "magazine-alocate-overlay";
+        overlay.className =
+          "fixed inset-0 z-50 flex items-center justify-center px-4 py-8 overflow-y-auto";
+        overlay.style.background = "rgba(15,20,25,0.55)";
+
+        const selected = new Set(btn._selectedIds || []);
+        const dbAssignedIds = relAssignments
+          .filter((a) => a[relIdField] === p.id)
+          .map((a) => a.magazin_id);
+
+        function itemHtml(m) {
+          const assignedToThis = dbAssignedIds.includes(m.id);
+          const otherAssignment = relAssignments.find(
+            (a) => a.magazin_id === m.id && a[relIdField] !== p.id,
+          );
+          const lockedByOther = !!otherAssignment && !assignedToThis;
+          const otherOwner = lockedByOther
+            ? (allProfiles || []).find(
+                (ap) => ap.id === otherAssignment[relIdField],
+              )
+            : null;
+          const otherLabel = otherOwner
+            ? otherOwner.nume || otherOwner.email
+            : isHub
+              ? "alt HUB"
+              : "alt agent";
+          const isChecked = selected.has(m.id);
+          const labelText = `${m.nume || m.email} ${m.filiala || ""}`;
+          return `
+        <label class="flex items-center gap-2 text-sm py-1.5 px-1.5 rounded-md ${lockedByOther ? "opacity-40 cursor-not-allowed" : "hover:bg-slate-50"}" data-mag-label="${esc(labelText.toLowerCase())}" ${lockedByOther ? `title="Deja alocat lui ${esc(otherLabel)}"` : ""}>
+          <input type="checkbox" class="modal-mag-check" data-magazin-id="${m.id}" ${isChecked ? "checked" : ""} ${lockedByOther ? "disabled" : ""}>
+          <span>${esc(m.nume || m.email)}${m.filiala ? " - " + esc(m.filiala) : ""}${lockedByOther ? ` <em class="not-italic text-slate-400">(${esc(otherLabel)})</em>` : ""}</span>
+        </label>`;
+        }
+
+        overlay.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl p-5 w-full max-w-sm fade-in flex flex-col" style="max-height:85vh">
+      <div class="flex items-start justify-between mb-2 shrink-0">
+        <h2 class="text-base font-bold">Magazine alocate</h2>
+        <button type="button" id="magazine-alocate-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none" title="Închide">✕</button>
+      </div>
+      <input type="text" id="magazine-alocate-search" class="border rounded-md px-2.5 py-1.5 text-sm mb-2 shrink-0" style="border-color:var(--line)" placeholder="Caută după nume sau filială...">
+      <div id="magazine-alocate-list" class="space-y-0.5 overflow-y-auto flex-1 min-h-0">
+        ${
+          magazine.length === 0
+            ? '<p class="text-xs text-slate-400 text-center py-3">Niciun magazin disponibil.</p>'
+            : magazine.map(itemHtml).join("")
+        }
+      </div>
+      <div class="flex gap-2 pt-3 shrink-0">
+        <button type="button" id="magazine-alocate-cancel" class="flex-1 rounded-lg py-2 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
+        <button type="button" id="magazine-alocate-save" class="flex-1 btn-primary rounded-lg py-2 text-sm">Salvează alocările</button>
+      </div>
+    </div>`;
+        document.body.appendChild(overlay);
+
+        document
+          .getElementById("magazine-alocate-close")
+          .addEventListener("click", () => overlay.remove());
+        document
+          .getElementById("magazine-alocate-cancel")
+          .addEventListener("click", () => overlay.remove());
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+
+        document
+          .getElementById("magazine-alocate-search")
+          .addEventListener("input", (e) => {
+            const q = e.target.value.trim().toLowerCase();
+            overlay.querySelectorAll("[data-mag-label]").forEach((el) => {
+              el.classList.toggle(
+                "hidden",
+                !!q && !el.dataset.magLabel.includes(q),
+              );
+            });
+          });
+
+        document
+          .getElementById("magazine-alocate-save")
+          .addEventListener("click", () => {
+            const checked = Array.from(
+              overlay.querySelectorAll(".modal-mag-check:checked"),
+            ).map((c) => c.dataset.magazinId);
+            btn._selectedIds = new Set(checked);
+            btn.textContent = checked.length
+              ? `${checked.length} magazin${checked.length === 1 ? "" : "e"} alocat${checked.length === 1 ? "" : "e"}`
+              : "Alege magazine";
+            overlay.remove();
+          });
       }
 
       const ZILE_CICLU_BATERIE = 15;
@@ -5036,23 +5233,51 @@
         return { inTermen, depasite, total: inTermen + depasite };
       }
 
-      function bateriiRezumatBar(produse, incarcari) {
+      function bateriiRezumatBar(produse, incarcari, filtruActiv) {
         const { inTermen, depasite, total } = rezumatBaterii(
           produse,
           incarcari,
         );
+        const activ = filtruActiv || "toate";
         return `
     <div class="flex flex-wrap items-center gap-3 mb-4">
-      <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white border" style="border-color:var(--line)">
+      <button type="button" data-baterii-filtru="toate" class="baterii-filtru-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white border transition-shadow ${activ === "toate" ? "ring-2 ring-slate-800" : ""}" style="border-color:var(--line)">
         📦 ${total} produs${total === 1 ? "" : "e"} de urmărit
-      </span>
-      <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-50 text-emerald-700">
+      </button>
+      <button type="button" data-baterii-filtru="termen" class="baterii-filtru-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-50 text-emerald-700 border border-transparent transition-shadow ${activ === "termen" ? "ring-2 ring-emerald-600" : ""}">
         🟢 ${inTermen} în termen
-      </span>
-      <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium ${depasite > 0 ? "bg-red-50 text-red-600" : "bg-slate-50 text-slate-400"}">
+      </button>
+      <button type="button" data-baterii-filtru="depasit" class="baterii-filtru-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-transparent transition-shadow ${depasite > 0 ? "bg-red-50 text-red-600" : "bg-slate-50 text-slate-400"} ${activ === "depasit" ? "ring-2 ring-red-600" : ""}">
         🔴 ${depasite} cu termen depășit
-      </span>
+      </button>
     </div>`;
+      }
+
+      function filtreazaProduseBaterii(produse, incarcari, filtru) {
+        if (filtru === "termen") {
+          return (produse || []).filter((p) => {
+            const c = calculeazaCicluriBaterie(p, incarcari);
+            return c && c.statusCurent === "verde";
+          });
+        }
+        if (filtru === "depasit") {
+          return (produse || []).filter((p) => {
+            const c = calculeazaCicluriBaterie(p, incarcari);
+            return c && c.statusCurent === "rosu";
+          });
+        }
+        return produse || [];
+      }
+
+      function bindBateriiRezumatBar(container, onChange) {
+        container.querySelectorAll(".baterii-filtru-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const key = btn.dataset.bateriiFiltru;
+            if (bateriiFiltruActiv === key) return;
+            bateriiFiltruActiv = key;
+            onChange();
+          });
+        });
       }
 
       function renderIdentificaProdusModal(produs) {
@@ -5264,12 +5489,17 @@
 
         container.innerHTML = `
     <p class="text-sm text-slate-500 mb-3">Fiecare produs trebuie încărcat cel târziu la ${ZILE_CICLU_BATERIE} zile de la intrarea în stoc sau de la ultima încărcare.</p>
-    ${bateriiRezumatBar(produse || [], incarcari || [])}
-    ${renderBateriiTable(produse || [], incarcari || [], true, false, null)}`;
+    ${bateriiRezumatBar(produse || [], incarcari || [], bateriiFiltruActiv)}
+    ${renderBateriiTable(filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv), incarcari || [], true, false, null)}`;
 
+        bindBateriiRezumatBar(container, () => renderBateriiMagazin(container));
         bindBateriiTableEvents(
           container,
-          produse || [],
+          filtreazaProduseBaterii(
+            produse || [],
+            incarcari || [],
+            bateriiFiltruActiv,
+          ),
           incarcari || [],
           async (p, btn) => {
             btn.disabled = true;
@@ -5351,10 +5581,15 @@
         }
 
         container.innerHTML = `
-    ${bateriiRezumatBar(produse || [], incarcari || [])}
-    ${renderBateriiTable(produse || [], incarcari || [], false, true, magazine)}`;
+    ${bateriiRezumatBar(produse || [], incarcari || [], bateriiFiltruActiv)}
+    ${renderBateriiTable(filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv), incarcari || [], false, true, magazine)}`;
 
-        bindBateriiTableEvents(container, produse || [], incarcari || []);
+        bindBateriiRezumatBar(container, () => renderBateriiAgent(container));
+        bindBateriiTableEvents(
+          container,
+          filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv),
+          incarcari || [],
+        );
       }
 
       async function renderBateriiHub(container) {
@@ -5409,10 +5644,15 @@
         }
 
         container.innerHTML = `
-    ${bateriiRezumatBar(produse || [], incarcari || [])}
-    ${renderBateriiTable(produse || [], incarcari || [], false, true, magazine)}`;
+    ${bateriiRezumatBar(produse || [], incarcari || [], bateriiFiltruActiv)}
+    ${renderBateriiTable(filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv), incarcari || [], false, true, magazine)}`;
 
-        bindBateriiTableEvents(container, produse || [], incarcari || []);
+        bindBateriiRezumatBar(container, () => renderBateriiHub(container));
+        bindBateriiTableEvents(
+          container,
+          filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv),
+          incarcari || [],
+        );
       }
 
       async function renderBateriiAdmin(container) {
@@ -5455,10 +5695,15 @@
         }
 
         container.innerHTML = `
-    ${bateriiRezumatBar(produse || [], incarcari || [])}
-    ${renderBateriiTable(produse || [], incarcari || [], false, true, magazine)}`;
+    ${bateriiRezumatBar(produse || [], incarcari || [], bateriiFiltruActiv)}
+    ${renderBateriiTable(filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv), incarcari || [], false, true, magazine)}`;
 
-        bindBateriiTableEvents(container, produse || [], incarcari || []);
+        bindBateriiRezumatBar(container, () => renderBateriiAdmin(container));
+        bindBateriiTableEvents(
+          container,
+          filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv),
+          incarcari || [],
+        );
       }
 
       const BUCKET_VANZARI = "documente-vanzari";
@@ -5493,15 +5738,20 @@
         });
       }
 
-      function deschideModalVanzareProdus(produs, refresh) {
+      function deschideModalVanzareProdus(
+        produs,
+        refresh,
+        marcheazaVanzareDirecta,
+      ) {
         const overlay = document.createElement("div");
         overlay.id = "vanzare-produs-overlay";
         overlay.className =
           "fixed inset-0 z-40 flex items-center justify-center px-4 py-8 overflow-y-auto";
         overlay.style.background = "rgba(15,20,25,0.55)";
         overlay.innerHTML = `
-    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg fade-in my-auto">
-      <h2 class="text-lg font-bold mb-1">Vinde produsul ${esc(produs.id_produs)}</h2>
+    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg fade-in my-auto relative">
+      <button type="button" id="vanzare-produs-close" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-xl leading-none" title="Închide">✕</button>
+      <h2 class="text-lg font-bold mb-1 pr-6">Vinde produsul ${esc(produs.id_produs)}</h2>
       <p class="text-sm text-slate-500 mb-5">Completează datele clientului final și încarcă documentele obligatorii.</p>
       <form id="form-vanzare-produs" class="space-y-4">
         <div>${fieldLabel("Nume Prenume")}<input type="text" id="vanzare-client-nume" required class="${inputBase()}"></div>
@@ -5528,6 +5778,9 @@
 
         document
           .getElementById("vanzare-produs-cancel")
+          .addEventListener("click", () => overlay.remove());
+        document
+          .getElementById("vanzare-produs-close")
           .addEventListener("click", () => overlay.remove());
         overlay.addEventListener("click", (e) => {
           if (e.target === overlay) overlay.remove();
@@ -5599,6 +5852,7 @@
                 .from("produse")
                 .update({
                   vandut: true,
+                  ...(marcheazaVanzareDirecta ? { vanzare_directa: true } : {}),
                   data_vanzare: new Date().toISOString(),
                   vandut_de: currentUser.id,
                   client_nume: document.getElementById("vanzare-client-nume")
@@ -5945,14 +6199,16 @@
       }
 
       function statisticiStateImplicit() {
-        const presets = presetariPerioadaStatistici();
-        const lunaCurenta = presets.find((p) => p.key === "luna");
+        const azi = new Date();
+        const iso = (d) => d.toISOString().slice(0, 10);
+        const oLunaInUrma = new Date(azi);
+        oLunaInUrma.setMonth(oLunaInUrma.getMonth() - 1);
         return {
           tip: "produse", // "produse" | "comenzi"
           subTipuri: ["toate"], // subset din: "toate" | "stoc_central" | "stoc_magazine" | "vandute" — "toate" e mereu exclusiv, celelalte se pot combina (multi-select)
-          perioada: "luna",
-          start: lunaCurenta.start,
-          end: lunaCurenta.end,
+          perioada: "",
+          start: iso(oLunaInUrma),
+          end: iso(azi),
           magazinId: "",
           agentNume: "",
           categorie: "",
@@ -5961,7 +6217,7 @@
           garantieExtinsa: "", // "" (Toate) | "da" | "nu"
           civ: "", // "" (Toate) | "da" | "nu"
           termenPlata: "", // string numeric, gol = filtrul e ignorat
-          stadiuPlata: "", // "" (Toate) | "integral" | "partial"
+          stadiuPlata: "", // "" (Toate) | "integral" | "partial" | "neachitat"
           afiseazaTotal: false,
         };
       }
@@ -6213,7 +6469,9 @@
             ${coloane
               .map(
                 (c) =>
-                  `<td class="px-3 py-3 text-xs whitespace-nowrap">${esc(getValoare(r, c.key))}</td>`,
+                  c.key === "numar_comanda"
+                    ? `<td class="px-3 py-3 text-xs whitespace-nowrap"><button type="button" class="stat-comanda-link underline decoration-dotted hover:text-[var(--teal-dark)] font-semibold" data-stat-comanda-id="${esc(r.id)}">${esc(getValoare(r, c.key))}</button></td>`
+                    : `<td class="px-3 py-3 text-xs whitespace-nowrap">${esc(getValoare(r, c.key))}</td>`,
               )
               .join("")}
           </tr>`,
@@ -6341,7 +6599,7 @@
           ? [
               {
                 id: "vanzare_directa",
-                nume: "Vânzări directe",
+                nume: "Vânzare directă",
                 filiala: "",
                 email: "",
               },
@@ -6396,6 +6654,14 @@
             </div>`
               : ""
           }
+          ${
+            esteAdmin
+              ? `<div id="stat-vd-wrap" class="${state.tip === "produse" ? "" : "hidden"}">
+              ${statLabel("VD")}
+              <button type="button" id="stat-vd-toggle" title="Filtrează doar vânzările directe" class="rounded-md px-2.5 py-1 text-xs font-semibold border ${state.magazinId === "vanzare_directa" ? "btn-primary" : ""}" style="border-color:var(--line)">VD</button>
+            </div>`
+              : ""
+          }
           <div class="w-28">${statLabel("Agent")}
             <div class="relative">
               <input type="text" id="stat-agent-input" class="${statInput()}" placeholder="Toți" autocomplete="off" value="${esc(state.agentNume)}">
@@ -6412,6 +6678,7 @@
               <option value="" ${state.stadiuPlata === "" ? "selected" : ""}>Toate</option>
               <option value="integral" ${state.stadiuPlata === "integral" ? "selected" : ""}>Achitat integral</option>
               <option value="partial" ${state.stadiuPlata === "partial" ? "selected" : ""}>Achitat parțial</option>
+              <option value="neachitat" ${state.stadiuPlata === "neachitat" ? "selected" : ""}>Neachitat</option>
             </select>
           </div>
           <div id="stat-categorie-wrap" class="w-32 ${state.tip === "produse" ? "" : "hidden"}">
@@ -6486,6 +6753,23 @@
             magazineFiltruList,
             () => {},
           );
+        }
+        const vdToggleBtn = document.getElementById("stat-vd-toggle");
+        if (vdToggleBtn) {
+          vdToggleBtn.addEventListener("click", () => {
+            const magInput = document.getElementById("stat-magazin-input");
+            const magIdInput = document.getElementById("stat-magazin-id");
+            const esteActiv = vdToggleBtn.classList.contains("btn-primary");
+            if (esteActiv) {
+              vdToggleBtn.classList.remove("btn-primary");
+              if (magInput) magInput.value = "";
+              if (magIdInput) magIdInput.value = "";
+            } else {
+              vdToggleBtn.classList.add("btn-primary");
+              if (magInput) magInput.value = "Vânzare directă";
+              if (magIdInput) magIdInput.value = "vanzare_directa";
+            }
+          });
         }
         attachAgentAutocomplete(
           document.getElementById("stat-agent-input"),
@@ -6598,7 +6882,10 @@
             if (state.agentNume) q = q.ilike("agent", `%${state.agentNume}%`);
             if (state.termenPlata)
               q = q.eq("termen_plata", parseInt(state.termenPlata, 10));
-            if (state.stadiuPlata) q = q.eq("stadiu_plata", state.stadiuPlata);
+            if (state.stadiuPlata === "neachitat")
+              q = q.is("stadiu_plata", null);
+            else if (state.stadiuPlata)
+              q = q.eq("stadiu_plata", state.stadiuPlata);
             const orFilter = buildSearchOrFilter(termen, [
               "numar_comanda",
               "agent",
@@ -6632,6 +6919,21 @@
             resultsEl.innerHTML = `
       <p class="text-sm text-slate-500 mb-2 shrink-0">${(comenzi || []).length} comand${(comenzi || []).length === 1 ? "ă" : "ă"} găsit${(comenzi || []).length === 1 ? "ă" : "e"} pentru filtrele selectate</p>
       ${tabelStatisticiHtml(coloane, comenzi || [], getValoare)}`;
+
+            resultsEl.querySelectorAll(".stat-comanda-link").forEach((el) => {
+              el.addEventListener("click", () => {
+                const comanda = (comenzi || []).find(
+                  (c) => String(c.id) === el.dataset.statComandaId,
+                );
+                if (comanda) {
+                  deschideComandaInitiala(
+                    comanda,
+                    liniiPerComanda.get(comanda.id) || [],
+                    profiles || [],
+                  );
+                }
+              });
+            });
 
             ultimulRaport = {
               meta: {
@@ -6777,7 +7079,9 @@
           if (garantieSel) state.garantieExtinsa = garantieSel.value;
           const civSel = document.getElementById("stat-civ");
           if (civSel) state.civ = civSel.value;
-          const termenPlataInput = document.getElementById("stat-termen-plata");
+          const termenPlataInput = document.getElementById(
+            "stat-termen-plata",
+          );
           if (termenPlataInput)
             state.termenPlata = termenPlataInput.value.trim();
           const stadiuPlataSel = document.getElementById("stat-stadiu-plata");
