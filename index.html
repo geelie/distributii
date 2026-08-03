@@ -251,8 +251,121 @@
       let currentProfile = null;
       let recoveryMode = false;
       let currentTabKey = null;
+      // Crește la fiecare schimbare de tab. Funcțiile de randare asincrone
+      // își rețin propria valoare la intrare și, după fetch-uri, verifică
+      // dacă mai sunt "cele mai recente" înainte să scrie în DOM — altfel
+      // un răspuns întârziat de la un tab părăsit ar putea scrie peste
+      // conținutul tab-ului nou (sau ar da eroare pe elemente inexistente).
+      let renderGen = 0;
+      function isStaleRender(myGen) {
+        return myGen !== renderGen;
+      }
       const tabSearchTerms = {};
       let searchDebounceTimer = null;
+
+      // ---------------------------------------------------------------
+      // Cache simplu în memorie pentru tabele mici / rar modificate.
+      // Elimină re-descărcarea completă a acestor tabele la fiecare
+      // schimbare de tab (profiles, agent_magazine, hub_magazine).
+      // Se invalidează explicit după orice scriere (insert/update/delete)
+      // care le poate afecta — vezi invalidateCache().
+      // ---------------------------------------------------------------
+      const CACHE_TTL_MS = 30000; // plasă de siguranță; invalidarea explicită e principalul mecanism
+      const _cache = {
+        profiles: { data: null, ts: 0, pending: null },
+        agent_magazine: { data: null, ts: 0, pending: null },
+        hub_magazine: { data: null, ts: 0, pending: null },
+      };
+
+      async function getCached(table) {
+        const entry = _cache[table];
+        const fresh = entry.data && Date.now() - entry.ts < CACHE_TTL_MS;
+        if (fresh) return { data: entry.data, error: null };
+        if (entry.pending) return entry.pending;
+        entry.pending = supa
+          .from(table)
+          .select("*")
+          .then((res) => {
+            if (!res.error) {
+              entry.data = res.data;
+              entry.ts = Date.now();
+            }
+            entry.pending = null;
+            return res;
+          });
+        return entry.pending;
+      }
+
+      function invalidateCache(...tables) {
+        tables.forEach((t) => {
+          if (_cache[t]) {
+            _cache[t].data = null;
+            _cache[t].ts = 0;
+          }
+        });
+      }
+
+      // ---------------------------------------------------------------
+      // Paginare server-side reutilizabilă pentru listele mari (produse,
+      // comenzi, vânzări) care altfel ar încărca tabelul întreg. Fiecare
+      // listă paginată își ține propria pagină curentă, cheia fiind
+      // tab-ul curent (currentTabKey), ca la revenirea pe tab să rămână
+      // pe aceeași pagină.
+      // ---------------------------------------------------------------
+      const PAGE_SIZE = 50;
+      const _pageState = {};
+
+      function getPageState(key) {
+        if (!_pageState[key]) _pageState[key] = { page: 0 };
+        return _pageState[key];
+      }
+
+      function resetPage(key) {
+        getPageState(key).page = 0;
+      }
+
+      function rangeFor(key) {
+        const st = getPageState(key);
+        const from = st.page * PAGE_SIZE;
+        return { from, to: from + PAGE_SIZE - 1 };
+      }
+
+      function paginationBarHtml(key, totalCount) {
+        const st = getPageState(key);
+        const totalPages = Math.max(
+          1,
+          Math.ceil((totalCount || 0) / PAGE_SIZE),
+        );
+        if (st.page > totalPages - 1) st.page = Math.max(0, totalPages - 1);
+        const cur = st.page + 1;
+        return `<div class="flex items-center justify-between text-xs text-slate-500 mt-3 pt-2 border-t shrink-0" style="border-color:var(--line)" data-pag-key="${key}">
+          <span>Pagina ${cur} din ${totalPages} · ${totalCount || 0} rezultate</span>
+          <div class="flex gap-1">
+            <button type="button" data-pag="prev" class="border rounded-md px-2.5 py-1 text-xs font-medium ${cur <= 1 ? "opacity-40 pointer-events-none" : "hover:bg-slate-50"}" style="border-color:var(--line)">‹ Anterioară</button>
+            <button type="button" data-pag="next" class="border rounded-md px-2.5 py-1 text-xs font-medium ${cur >= totalPages ? "opacity-40 pointer-events-none" : "hover:bg-slate-50"}" style="border-color:var(--line)">Următoare ›</button>
+          </div>
+        </div>`;
+      }
+
+      function bindPaginationBar(container, key, onChange) {
+        const bar = container.querySelector(
+          `[data-pag-key="${CSS.escape(key)}"]`,
+        );
+        if (!bar) return;
+        const st = getPageState(key);
+        bar
+          .querySelector('[data-pag="prev"]')
+          ?.addEventListener("click", () => {
+            st.page = Math.max(0, st.page - 1);
+            onChange();
+          });
+        bar
+          .querySelector('[data-pag="next"]')
+          ?.addEventListener("click", () => {
+            st.page = st.page + 1;
+            onChange();
+          });
+      }
 
       function buildSearchOrFilter(term, columns) {
         const t = (term || "").trim();
@@ -285,6 +398,113 @@
         document.body.appendChild(el);
         setTimeout(() => el.remove(), 3500);
       }
+
+      // Jurnal acțiuni — înregistrează evenimente istorice pentru produse și
+      // comenzi (cine, când, ce a făcut). Nu blochează fluxul principal dacă
+      // scrierea eșuează (de ex. tabela nu a fost încă creată în Supabase).
+      function poateVedeaJurnal() {
+        return (
+          currentProfile &&
+          (currentProfile.role === "admin" ||
+            currentProfile.role === "superadmin")
+        );
+      }
+      function roleLabelText(role) {
+        const map = {
+          magazin: "Magazin",
+          agent: "Agent",
+          admin: "Admin",
+          superadmin: "Super Admin",
+          magazin_hub: "Magazin-HUB",
+        };
+        return map[role] || "Fără rol";
+      }
+      async function inregistreazaLog(
+        tipEntitate,
+        entitateId,
+        actiune,
+        detalii,
+      ) {
+        if (!entitateId) return;
+        try {
+          const numeUtilizator = currentProfile
+            ? currentProfile.nume || currentProfile.email
+            : null;
+          const efectuatDeNume =
+            numeUtilizator && currentProfile && currentProfile.role
+              ? `${numeUtilizator} (${roleLabelText(currentProfile.role)})`
+              : numeUtilizator;
+          await supa.from("jurnal_actiuni").insert({
+            tip_entitate: tipEntitate,
+            entitate_id: entitateId,
+            actiune,
+            detalii: detalii || null,
+            efectuat_de: currentUser ? currentUser.id : null,
+            efectuat_de_nume: efectuatDeNume,
+          });
+        } catch (e) {
+          // Jurnalizarea este auxiliară — nu întrerupem acțiunea principală.
+        }
+      }
+      function logButtonHtml(id) {
+        return `<button type="button" id="${id}" class="rounded-md px-2 py-0.5 text-[10px] font-semibold border text-slate-500 hover:bg-slate-50 hover:text-slate-700" style="border-color:var(--line)" title="Jurnal acțiuni">LOG</button>`;
+      }
+      async function renderLogModal(tipEntitate, entitateId, titlu) {
+        const overlay = document.createElement("div");
+        overlay.id = "log-actiuni-overlay";
+        overlay.className =
+          "fixed inset-0 z-50 flex items-center justify-center px-4 py-8 overflow-y-auto";
+        overlay.style.background = "rgba(15,20,25,0.55)";
+        overlay.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl p-5 w-full max-w-lg fade-in my-auto">
+      <div class="flex items-start justify-between mb-1">
+        <h2 class="text-base font-bold">Jurnal acțiuni${titlu ? " — " + esc(titlu) : ""}</h2>
+        <button type="button" id="log-actiuni-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+      </div>
+      <p class="text-sm text-slate-500 mb-3">Cine, când și ce acțiune a fost efectuată.</p>
+      <div id="log-actiuni-list" class="space-y-2 max-h-[65vh] overflow-y-auto">
+        <p class="text-sm text-slate-400 text-center py-4">Se încarcă...</p>
+      </div>
+    </div>`;
+        document.body.appendChild(overlay);
+        document
+          .getElementById("log-actiuni-close")
+          .addEventListener("click", () => overlay.remove());
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+
+        const listEl = document.getElementById("log-actiuni-list");
+        const { data, error } = await supa
+          .from("jurnal_actiuni")
+          .select("*")
+          .eq("tip_entitate", tipEntitate)
+          .eq("entitate_id", entitateId)
+          .order("created_at", { ascending: false });
+
+        if (!listEl.isConnected) return;
+        if (error) {
+          listEl.innerHTML = `<p class="text-sm text-red-600 text-center py-4">Eroare la încărcarea jurnalului: ${esc(error.message)}</p>`;
+          return;
+        }
+        if (!data || !data.length) {
+          listEl.innerHTML = `<p class="text-sm text-slate-400 text-center py-4">Niciun eveniment înregistrat încă.</p>`;
+          return;
+        }
+        listEl.innerHTML = data
+          .map(
+            (l) => `
+    <div class="border rounded-lg p-2.5" style="border-color:var(--line)">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-sm font-semibold">${esc(l.actiune)}</span>
+        <span class="text-[10px] text-slate-400 shrink-0">${new Date(l.created_at).toLocaleString("ro-RO")}</span>
+      </div>
+      <div class="text-xs text-slate-500 mt-0.5">${esc(l.efectuat_de_nume || "—")}</div>
+      ${l.detalii ? `<div class="text-xs text-slate-400 mt-1">${esc(l.detalii)}</div>` : ""}
+    </div>`,
+          )
+          .join("");
+      }
       function rolePill(role) {
         const map = {
           magazin: ["Magazin", "role-magazin"],
@@ -310,7 +530,16 @@
           return;
         }
         if (session && !recoveryMode) {
+          const esteAcelasiUtilizator =
+            currentUser && currentUser.id === session.user.id;
           currentUser = session.user;
+          // Supabase re-emite un eveniment de sesiune (ex. la refresh de
+          // token sau la revenirea pe tab-ul browserului) fără să fie o
+          // autentificare nouă. Dacă reconstruim tot ecranul de fiecare
+          // dată (loadProfileAndRender -> renderShell -> app.innerHTML),
+          // orice fetch aflat în desfășurare pe tab-ul curent rămâne cu
+          // elementele DOM țintă șterse și pică la runda de randare.
+          if (esteAcelasiUtilizator && currentProfile) return;
           loadProfileAndRender();
         }
       });
@@ -613,6 +842,56 @@
           });
       }
 
+      function comenziVazuteStorageKey() {
+        return `geeli_comenzi_vazute_${currentUser ? currentUser.id : "anon"}`;
+      }
+      function getComenziVazuteSet() {
+        try {
+          const raw = localStorage.getItem(comenziVazuteStorageKey());
+          return new Set(raw ? JSON.parse(raw) : []);
+        } catch (e) {
+          return new Set();
+        }
+      }
+      function salveazaComenziVazuteSet(set) {
+        try {
+          localStorage.setItem(
+            comenziVazuteStorageKey(),
+            JSON.stringify(Array.from(set)),
+          );
+        } catch (e) {}
+      }
+      function marcheazaComandaVazuta(id) {
+        const set = getComenziVazuteSet();
+        if (!set.has(id)) {
+          set.add(id);
+          salveazaComenziVazuteSet(set);
+        }
+      }
+      function initializeazaComenziVazuteDacaLipsesc(toateIds) {
+        try {
+          if (localStorage.getItem(comenziVazuteStorageKey()) === null) {
+            salveazaComenziVazuteSet(new Set(toateIds));
+          }
+        } catch (e) {}
+      }
+      async function actualizeazaBadgeComenziNoi() {
+        if (
+          !currentProfile ||
+          (currentProfile.role !== "admin" &&
+            currentProfile.role !== "superadmin")
+        )
+          return;
+        const { data, error } = await supa.from("comenzi").select("id");
+        const dot = document.getElementById("comenzi-badge-dot");
+        if (error || !data || !dot) return;
+        const toateIds = data.map((c) => c.id);
+        initializeazaComenziVazuteDacaLipsesc(toateIds);
+        const vazute = getComenziVazuteSet();
+        const existaNoi = toateIds.some((id) => !vazute.has(id));
+        dot.classList.toggle("hidden", !existaNoi);
+      }
+
       function renderShell() {
         if (!currentProfile) {
           renderPendingRole();
@@ -697,10 +976,17 @@
           : tabs[0].key;
 
         const nav = document.getElementById("side-nav");
+        const esteAdminSauSuperadmin =
+          currentProfile.role === "admin" ||
+          currentProfile.role === "superadmin";
         nav.innerHTML = tabs
           .map(
             (t) => `
-    <button data-key="${t.key}" class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium ${t.key === initialKey ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/5"}">${t.label}</button>
+    <button data-key="${t.key}" class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium ${t.key === initialKey ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/5"}">${
+      t.key === "comenzi" && esteAdminSauSuperadmin
+        ? `<span class="relative inline-block pr-2">${t.label}<span id="comenzi-badge-dot" class="hidden absolute -top-1 -right-2 block w-2 h-2 rounded-full bg-red-500" style="box-shadow:0 0 0 2px var(--graphite)" title="Există comenzi noi, nedeschise încă"></span></span>`
+        : t.label
+    }</button>
   `,
           )
           .join("");
@@ -730,6 +1016,8 @@
             renderChangePasswordModal();
           });
 
+        if (esteAdminSauSuperadmin) actualizeazaBadgeComenziNoi();
+
         openTab(initialKey, tabs);
       }
 
@@ -737,6 +1025,7 @@
         const common = [];
         if (role === "magazin")
           return [
+            { key: "acasa", label: "Acasă" },
             { key: "stoc", label: "Stocul meu" },
             { key: "vandute", label: "Produse vândute" },
             { key: "comenzi", label: "Comenzile mele" },
@@ -745,6 +1034,7 @@
           ];
         if (role === "magazin_hub")
           return [
+            { key: "acasa", label: "Acasă" },
             { key: "stoc", label: "Stoc magazine" },
             { key: "vandute", label: "Produse vândute" },
             { key: "comenzi", label: "Comenzi magazine" },
@@ -753,6 +1043,7 @@
           ];
         if (role === "agent")
           return [
+            { key: "acasa", label: "Acasă" },
             { key: "comenzi", label: "Comenzile mele" },
             { key: "stoc-alocat", label: "Stoc magazine alocate" },
             { key: "baterii", label: "Încărcare baterii" },
@@ -760,6 +1051,7 @@
           ];
         if (role === "admin")
           return [
+            { key: "acasa", label: "Acasă" },
             { key: "depozit", label: "Depozit central" },
             { key: "trimise", label: "Produse trimise către magazine" },
             { key: "vandute", label: "Produse vândute" },
@@ -769,6 +1061,7 @@
           ];
         if (role === "superadmin")
           return [
+            { key: "acasa", label: "Acasă" },
             { key: "depozit", label: "Depozit central" },
             { key: "trimise", label: "Produse trimise către magazine" },
             { key: "vandute", label: "Produse vândute" },
@@ -790,8 +1083,11 @@
       }
 
       function dispatchTab(key) {
+        renderGen++;
         const content = document.getElementById("page-content");
-        if (key === "utilizatori") {
+        if (key === "acasa") {
+          renderAcasa(content);
+        } else if (key === "utilizatori") {
           renderUserAdmin(content);
         } else if (key === "depozit") {
           renderDepozitCentral(content);
@@ -829,6 +1125,309 @@
         }
       }
 
+      // ---------------------------------------------------------------
+      // Pagina de start ("Acasă") — mesaj de salut + carduri statistice
+      // adaptate rolului curent. Se încarcă prima dată la pornirea
+      // aplicației (primul tab din tabsForRole pentru fiecare rol).
+      // ---------------------------------------------------------------
+      function lunaCurentaRangeAcasa() {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        return { start: start.toISOString(), end: end.toISOString() };
+      }
+
+      function salutAcasa() {
+        const h = new Date().getHours();
+        if (h < 12) return "Bună dimineața";
+        if (h < 18) return "Bună ziua";
+        return "Bună seara";
+      }
+
+      function formatDataAcasa() {
+        const s = new Date().toLocaleDateString("ro-RO", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        });
+        return s.charAt(0).toUpperCase() + s.slice(1);
+      }
+
+      function acasaCard({ label, value, sub, colorClass, tabKey }) {
+        return `
+    <button type="button" data-acasa-tab="${tabKey || ""}" class="text-left bg-white rounded-xl border p-4 fade-in ${tabKey ? "hover:shadow-md transition-shadow cursor-pointer" : "cursor-default"}" style="border-color:var(--line)">
+      <div class="text-xs font-medium text-slate-400 mb-1">${esc(label)}</div>
+      <div class="text-2xl font-bold ${colorClass || "text-slate-800"}">${esc(String(value))}</div>
+      ${sub ? `<div class="text-xs text-slate-400 mt-1">${esc(sub)}</div>` : ""}
+    </button>`;
+      }
+
+      function acasaHeader() {
+        const nume = currentProfile.nume || currentProfile.email;
+        return `
+    <div class="bg-white rounded-xl border p-5 mb-5 fade-in" style="border-color:var(--line)">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 class="text-lg font-bold text-slate-800">${esc(salutAcasa())}, ${esc(nume)}!</h2>
+          <p class="text-sm text-slate-400">${esc(formatDataAcasa())}</p>
+        </div>
+        ${rolePill(currentProfile.role)}
+      </div>
+    </div>`;
+      }
+
+      function bindAcasaCards(container) {
+        container.querySelectorAll("[data-acasa-tab]").forEach((btn) => {
+          const key = btn.dataset.acasaTab;
+          if (!key) return;
+          btn.addEventListener("click", () => {
+            const navBtn = document.querySelector(
+              `#side-nav .nav-btn[data-key="${key}"]`,
+            );
+            if (navBtn) navBtn.click();
+          });
+        });
+      }
+
+      async function renderAcasa(container) {
+        container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
+        const { start, end } = lunaCurentaRangeAcasa();
+        let cardsHtml = "";
+
+        try {
+          if (currentProfile.role === "magazin") {
+            const [stocRes, vanduteRes, comenziRes, produseBateriiRes] =
+              await Promise.all([
+                supa
+                  .from("produse")
+                  .select("id", { count: "exact", head: true })
+                  .eq("magazin_id", currentUser.id)
+                  .eq("vandut", false),
+                supa
+                  .from("produse")
+                  .select("pret_vanzare")
+                  .eq("magazin_id", currentUser.id)
+                  .eq("vandut", true)
+                  .gte("data_vanzare", start)
+                  .lt("data_vanzare", end),
+                supa
+                  .from("comenzi")
+                  .select("id", { count: "exact", head: true })
+                  .eq("magazin_id", currentUser.id)
+                  .in("status", ["in_asteptare", "partial_onorata"]),
+                supa
+                  .from("produse")
+                  .select("id,magazin_id,data_comenzii")
+                  .eq("magazin_id", currentUser.id)
+                  .eq("vandut", false),
+              ]);
+            const vandute = vanduteRes.data || [];
+            const valoareVandute = vandute.reduce(
+              (s, p) => s + (Number(p.pret_vanzare) || 0),
+              0,
+            );
+            const produseBaterii = produseBateriiRes.data || [];
+            const idsBaterii = produseBaterii.map((p) => p.id);
+            const incarcariRes = idsBaterii.length
+              ? await supa
+                  .from("incarcari_baterie")
+                  .select("*")
+                  .in("produs_id", idsBaterii)
+              : { data: [] };
+            const rez = rezumatBaterii(produseBaterii, incarcariRes.data || []);
+
+            cardsHtml = `
+        ${acasaCard({ label: "Stoc curent", value: stocRes.count ?? 0, tabKey: "stoc" })}
+        ${acasaCard({ label: "Vândute luna aceasta", value: vandute.length, sub: `${fmtNum(valoareVandute)} lei`, colorClass: "text-emerald-600", tabKey: "vandute" })}
+        ${acasaCard({ label: "Comenzi active", value: comenziRes.count ?? 0, tabKey: "comenzi" })}
+        ${acasaCard({ label: "Baterii depășite", value: rez.depasite, colorClass: rez.depasite ? "text-red-600" : "text-slate-800", tabKey: "baterii" })}`;
+          } else if (currentProfile.role === "magazin_hub") {
+            const { data: hubMagazine } = await supa
+              .from("hub_magazine")
+              .select("*")
+              .eq("hub_id", currentUser.id);
+            const magazinIds = (hubMagazine || []).map((h) => h.magazin_id);
+
+            if (!magazinIds.length) {
+              cardsHtml = `<div class="bg-white rounded-xl border p-6 text-center text-sm text-slate-400 col-span-full" style="border-color:var(--line)">Nu ai niciun magazin arondat.</div>`;
+            } else {
+              const [
+                stocRes,
+                vanduteRes,
+                comenziRes,
+                produseBateriiRes,
+                profilesRes,
+              ] = await Promise.all([
+                supa
+                  .from("produse")
+                  .select("id", { count: "exact", head: true })
+                  .in("magazin_id", magazinIds)
+                  .eq("vandut", false),
+                supa
+                  .from("produse")
+                  .select("pret_vanzare,magazin_id")
+                  .in("magazin_id", magazinIds)
+                  .eq("vandut", true)
+                  .gte("data_vanzare", start)
+                  .lt("data_vanzare", end),
+                supa
+                  .from("comenzi")
+                  .select("id", { count: "exact", head: true })
+                  .in("magazin_id", magazinIds)
+                  .in("status", ["in_asteptare", "partial_onorata"]),
+                supa
+                  .from("produse")
+                  .select("id,magazin_id,data_comenzii")
+                  .in("magazin_id", magazinIds)
+                  .eq("vandut", false),
+                getCached("profiles"),
+              ]);
+              const vandute = vanduteRes.data || [];
+              const valoareVandute = vandute.reduce(
+                (s, p) => s + (Number(p.pret_vanzare) || 0),
+                0,
+              );
+              const produseBaterii = produseBateriiRes.data || [];
+              const idsBaterii = produseBaterii.map((p) => p.id);
+              const incarcariRes = idsBaterii.length
+                ? await supa
+                    .from("incarcari_baterie")
+                    .select("*")
+                    .in("produs_id", idsBaterii)
+                : { data: [] };
+              const rez = rezumatBaterii(
+                produseBaterii,
+                incarcariRes.data || [],
+              );
+
+              const perMagazin = {};
+              vandute.forEach((p) => {
+                perMagazin[p.magazin_id] = (perMagazin[p.magazin_id] || 0) + 1;
+              });
+              const profiles = profilesRes.data || [];
+              const top3 = Object.entries(perMagazin)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([id, n]) => {
+                  const m = profiles.find((x) => x.id === id);
+                  return `<div class="flex justify-between gap-2"><span class="truncate">${esc(m ? m.nume || m.email : "Magazin")}</span><span class="font-medium shrink-0">${n}</span></div>`;
+                })
+                .join("");
+
+              cardsHtml = `
+        ${acasaCard({ label: "Stoc total magazine", value: stocRes.count ?? 0, tabKey: "stoc" })}
+        ${acasaCard({ label: "Vândute luna aceasta", value: vandute.length, sub: `${fmtNum(valoareVandute)} lei`, colorClass: "text-emerald-600", tabKey: "vandute" })}
+        ${acasaCard({ label: "Comenzi active", value: comenziRes.count ?? 0, tabKey: "comenzi" })}
+        ${acasaCard({ label: "Baterii depășite", value: rez.depasite, colorClass: rez.depasite ? "text-red-600" : "text-slate-800", tabKey: "baterii" })}
+        <div class="bg-white rounded-xl border p-4 fade-in" style="border-color:var(--line)">
+          <div class="text-xs font-medium text-slate-400 mb-2">Top magazine (vânzări luna aceasta)</div>
+          <div class="text-sm text-slate-700 space-y-1">${top3 || '<span class="text-slate-400">—</span>'}</div>
+        </div>`;
+            }
+          } else if (currentProfile.role === "agent") {
+            const { data: asocieri } = await supa
+              .from("agent_magazine")
+              .select("*")
+              .eq("agent_id", currentUser.id);
+            const magazinIds = (asocieri || []).map((a) => a.magazin_id);
+
+            const [comenziRes, stocAlocatRes, vanduteRes, neachitateRes] =
+              await Promise.all([
+                supa
+                  .from("comenzi")
+                  .select("id", { count: "exact", head: true })
+                  .eq("creat_de", currentUser.id)
+                  .in("status", ["in_asteptare", "partial_onorata"]),
+                magazinIds.length
+                  ? supa
+                      .from("produse")
+                      .select("id", { count: "exact", head: true })
+                      .in("magazin_id", magazinIds)
+                      .eq("vandut", false)
+                  : Promise.resolve({ count: 0 }),
+                supa
+                  .from("produse")
+                  .select("pret_vanzare")
+                  .eq("vandut_de", currentUser.id)
+                  .eq("vandut", true)
+                  .gte("data_vanzare", start)
+                  .lt("data_vanzare", end),
+                supa
+                  .from("comenzi")
+                  .select("id", { count: "exact", head: true })
+                  .eq("creat_de", currentUser.id)
+                  .is("stadiu_plata", null),
+              ]);
+            const vandute = vanduteRes.data || [];
+            const valoareVandute = vandute.reduce(
+              (s, p) => s + (Number(p.pret_vanzare) || 0),
+              0,
+            );
+
+            cardsHtml = `
+        ${acasaCard({ label: "Comenzile mele active", value: comenziRes.count ?? 0, tabKey: "comenzi" })}
+        ${acasaCard({ label: "Stoc alocat disponibil", value: stocAlocatRes.count ?? 0, tabKey: "stoc-alocat" })}
+        ${acasaCard({ label: "Vânzări luna aceasta", value: vandute.length, sub: `${fmtNum(valoareVandute)} lei`, colorClass: "text-emerald-600" })}
+        ${acasaCard({ label: "Comenzi neachitate", value: neachitateRes.count ?? 0, colorClass: neachitateRes.count ? "text-amber-600" : "text-slate-800", tabKey: "comenzi" })}`;
+          } else if (
+            currentProfile.role === "admin" ||
+            currentProfile.role === "superadmin"
+          ) {
+            const sapteZileInUrma = new Date(
+              Date.now() - 7 * 86400000,
+            ).toISOString();
+            const [stocRes, trimiseRes, comenziRes, vanduteRes] =
+              await Promise.all([
+                supa
+                  .from("produse")
+                  .select("id", { count: "exact", head: true })
+                  .is("magazin_id", null)
+                  .eq("vanzare_directa", false)
+                  .eq("vandut", false),
+                supa
+                  .from("produse")
+                  .select("id", { count: "exact", head: true })
+                  .not("magazin_id", "is", null)
+                  .gte("data_comenzii", sapteZileInUrma),
+                supa
+                  .from("comenzi")
+                  .select("id", { count: "exact", head: true })
+                  .in("status", ["in_asteptare", "partial_onorata"]),
+                supa
+                  .from("produse")
+                  .select("pret_vanzare")
+                  .eq("vandut", true)
+                  .gte("data_vanzare", start)
+                  .lt("data_vanzare", end),
+              ]);
+            const vandute = vanduteRes.data || [];
+            const valoareVandute = vandute.reduce(
+              (s, p) => s + (Number(p.pret_vanzare) || 0),
+              0,
+            );
+
+            cardsHtml = `
+        ${acasaCard({ label: "Stoc depozit central", value: stocRes.count ?? 0, tabKey: "depozit" })}
+        ${acasaCard({ label: "Produse trimise (ultimele 7 zile)", value: trimiseRes.count ?? 0, tabKey: "trimise" })}
+        ${acasaCard({ label: "Comenzi active", value: comenziRes.count ?? 0, tabKey: "comenzi" })}
+        ${acasaCard({ label: "Vânzări luna aceasta", value: `${fmtNum(valoareVandute)} lei`, sub: `${vandute.length} produse`, colorClass: "text-emerald-600", tabKey: "vandute" })}`;
+          }
+
+          if (isStaleRender(myGen)) return;
+          container.innerHTML =
+            acasaHeader() +
+            `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">${cardsHtml}</div>`;
+          bindAcasaCards(container);
+        } catch (e) {
+          if (isStaleRender(myGen)) return;
+          container.innerHTML =
+            acasaHeader() +
+            `<div class="bg-white rounded-xl border p-6 text-sm text-red-600" style="border-color:var(--line)">Eroare la încărcarea statisticilor: ${esc(e && e.message ? e.message : String(e))}</div>`;
+        }
+      }
+
       function bindGlobalSearch() {
         const input = document.getElementById("global-search-input");
         if (!input) return;
@@ -838,6 +1437,7 @@
           const valoare = input.value;
           searchDebounceTimer = setTimeout(() => {
             tabSearchTerms[currentTabKey] = valoare;
+            resetPage(currentTabKey);
             dispatchTab(currentTabKey);
           }, 350);
         };
@@ -951,6 +1551,7 @@
                 updated_at: new Date().toISOString(),
               })
               .eq("id", p.id);
+            if (!error) invalidateCache("profiles");
 
             if (error) {
               msg.className = "text-sm text-center text-red-600";
@@ -1010,12 +1611,8 @@
           return;
         }
 
-        const { data: assignments } = await supa
-          .from("agent_magazine")
-          .select("*");
-        const { data: hubAssignments } = await supa
-          .from("hub_magazine")
-          .select("*");
+        const { data: assignments } = await getCached("agent_magazine");
+        const { data: hubAssignments } = await getCached("hub_magazine");
         const magazine = profiles.filter((p) => p.role === "magazin");
         const viewerIsSuperadmin = currentProfile.role === "superadmin";
 
@@ -1196,6 +1793,39 @@
       function fmtNum(n) {
         if (n === null || n === undefined || n === "") return "—";
         return Number(n).toFixed(2);
+      }
+
+      const CAMPURI_PRET_LOG = [
+        { key: "pret_intrare", label: "Preț intrare" },
+        { key: "pret_vanzare", label: "Preț vânzare" },
+        { key: "alte_costuri", label: "Alte costuri" },
+        { key: "adaos", label: "Adaos" },
+        { key: "total_fara_tva", label: "Total (fără TVA)" },
+        { key: "pret_cu_tva", label: "Preț cu TVA" },
+        { key: "pret_recomandat", label: "Preț recomandat" },
+        { key: "discount", label: "Discount" },
+      ];
+      function valNumLog(v) {
+        return v === null || v === undefined || v === "" ? null : Number(v);
+      }
+      function modificariPretProdus(original, payload) {
+        const rezultat = [];
+        CAMPURI_PRET_LOG.forEach(({ key, label }) => {
+          if (!(key in payload)) return;
+          const vechi = valNumLog(original[key]);
+          const nou = valNumLog(payload[key]);
+          const eDiferit =
+            (vechi === null) !== (nou === null) ||
+            (vechi !== null && nou !== null && Math.abs(vechi - nou) > 0.001);
+          if (eDiferit) {
+            rezultat.push({
+              label,
+              vechi: vechi === null ? "—" : vechi.toFixed(2),
+              nou: nou === null ? "—" : nou.toFixed(2),
+            });
+          }
+        });
+        return rezultat;
       }
 
       function distinctMarci(produse) {
@@ -1433,15 +2063,19 @@
         magazine,
         reservedIds,
         produsComandaMap,
+        opts,
       ) {
+        const showAgent = !opts || opts.showAgent !== false;
+        const showMagazin = !!(opts && opts.showMagazin);
         return `
     <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
-      <table class="w-full text-sm min-w-[1700px]">
+      <table class="w-full text-sm min-w-[1500px]">
         <thead>
           <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
             <th class="px-3 py-3 font-medium">Nr.</th>
             <th class="px-3 py-3 font-medium">ID produs</th>
-            <th class="px-3 py-3 font-medium">Agent</th>
+            ${showAgent ? '<th class="px-3 py-3 font-medium">Agent</th>' : ""}
+            ${showMagazin ? '<th class="px-3 py-3 font-medium">Magazin</th>' : ""}
             <th class="px-3 py-3 font-medium">Data comenzii</th>
             <th class="px-3 py-3 font-medium">Categorie</th>
             <th class="px-3 py-3 font-medium">Marcă</th>
@@ -1455,7 +2089,6 @@
             <th class="px-3 py-3 font-medium">Preț cu TVA</th>
             <th class="px-3 py-3 font-medium">Preț Recomandat</th>
             <th class="px-3 py-3 font-medium">C.I.V.</th>
-            <th class="px-3 py-3 font-medium">Magazin</th>
             <th class="px-3 py-3 font-medium">Telefon</th>
             <th class="px-3 py-3 font-medium">Adresă facturare</th>
             <th class="px-3 py-3 font-medium"></th>
@@ -1470,11 +2103,32 @@
               magazine,
               reservedIds.has(p.id),
               produsComandaMap ? produsComandaMap.get(p.id) : null,
+              opts,
             ),
           )
           .join("")}</tbody>
       </table>
     </div>`;
+      }
+
+      const PRODUSE_CAUTARE_COLOANE = [
+        "id_produs",
+        "categorie",
+        "marca",
+        "culoare",
+        "vin",
+        "agent",
+        "telefon",
+        "adresa_facturare",
+      ];
+
+      // Listă distinctă de mărci — se citește doar coloana "marca" (nu
+      // rândul întreg) pentru autocomplete; mult mai ieftin decât select("*")
+      // pe tot tabelul, dar tot scanează tabelul — dacă produse ajunge la
+      // sute de mii de rânduri, ia în calcul o funcție/vedere SQL dedicată.
+      async function fetchMarciDistincte() {
+        const { data } = await supa.from("produse").select("marca");
+        return distinctMarci(data || []);
       }
 
       function renderStocSubtab(
@@ -1486,13 +2140,16 @@
         agentMagazinMap,
         marci,
         refresh,
+        totalCount,
+        pageKey,
       ) {
         container.innerHTML = `
     <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
-      <p class="text-sm text-slate-500">${stocDisponibil.length} produs${stocDisponibil.length === 1 ? "" : "e"} disponibil${stocDisponibil.length === 1 ? "" : "e"} în stocul depozitului central</p>
+      <p class="text-sm text-slate-500">${totalCount} produs${totalCount === 1 ? "" : "e"} disponibil${totalCount === 1 ? "" : "e"} în stocul depozitului central</p>
       <button id="btn-add-produs" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Adaugă produs nou</button>
     </div>
-    ${renderProductsTableHtml(stocDisponibil, agenti, magazine, reservedIds)}`;
+    ${renderProductsTableHtml(stocDisponibil, agenti, magazine, reservedIds, null, { showAgent: false, showMagazin: false })}
+    ${paginationBarHtml(pageKey, totalCount)}`;
 
         stocDisponibil.forEach((p) =>
           bindProductRow(
@@ -1512,6 +2169,8 @@
           .addEventListener("click", () => {
             renderAddProductModal(agenti, refresh, null, null, marci);
           });
+
+        bindPaginationBar(container, pageKey, refresh);
       }
 
       function renderTrimiseSubtab(
@@ -1523,16 +2182,19 @@
         marci,
         refresh,
         comandaCtx,
+        totalCount,
+        pageKey,
       ) {
-        if (!produseTrimise.length) {
+        if (!totalCount) {
           container.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun produs trimis către magazine încă.</p></div>`;
           return;
         }
         container.innerHTML = `
     <div class="mb-4">
-      <p class="text-sm text-slate-500">${produseTrimise.length} produs${produseTrimise.length === 1 ? "" : "e"} trimis${produseTrimise.length === 1 ? "" : "e"} către magazine</p>
+      <p class="text-sm text-slate-500">${totalCount} produs${totalCount === 1 ? "" : "e"} trimis${totalCount === 1 ? "" : "e"} către magazine</p>
     </div>
-    ${renderProductsTableHtml(produseTrimise, agenti, magazine, new Set(), comandaCtx ? comandaCtx.map : null)}`;
+    ${renderProductsTableHtml(produseTrimise, agenti, magazine, new Set(), comandaCtx ? comandaCtx.map : null, { showAgent: true, showMagazin: true })}
+    ${paginationBarHtml(pageKey, totalCount)}`;
 
         produseTrimise.forEach((p) =>
           bindProductRow(
@@ -1545,38 +2207,41 @@
             comandaCtx,
           ),
         );
+
+        bindPaginationBar(container, pageKey, refresh);
       }
 
-      async function loadDepozitData() {
+      // Stoc central: doar produsele nealocate unui magazin/vânzare directă.
+      // comanda_produse e interogat DOAR pentru id-urile produselor din
+      // pagina curentă (nu tot tabelul) — folosit doar ca să marcheze
+      // produsele deja "asignate" unei comenzi (rezervate).
+      async function loadStocCentralData(pageKey) {
         const termenCautare = tabSearchTerms[currentTabKey] || "";
+        const { from, to } = rangeFor(pageKey);
         let produseQuery = supa
           .from("produse")
-          .select("*")
-          .order("created_at", { ascending: true });
-        const orFilter = buildSearchOrFilter(termenCautare, [
-          "id_produs",
-          "categorie",
-          "marca",
-          "culoare",
-          "vin",
-          "agent",
-          "telefon",
-          "adresa_facturare",
-        ]);
+          .select("*", { count: "exact" })
+          .is("magazin_id", null)
+          .eq("vanzare_directa", false)
+          .eq("vandut", false)
+          .order("created_at", { ascending: true })
+          .range(from, to);
+        const orFilter = buildSearchOrFilter(
+          termenCautare,
+          PRODUSE_CAUTARE_COLOANE,
+        );
         if (orFilter) produseQuery = produseQuery.or(orFilter);
 
         const [
-          { data: produse, error: prodErr },
+          { data: produse, error: prodErr, count },
           { data: profiles, error: profErr },
-          { data: linii, error: liniiErr },
           { data: asocieri, error: asoErr },
-          { data: comenzi, error: comErr },
+          marci,
         ] = await Promise.all([
           produseQuery,
-          supa.from("profiles").select("*"),
-          supa.from("comanda_produse").select("*"),
-          supa.from("agent_magazine").select("*"),
-          supa.from("comenzi").select("*"),
+          getCached("profiles"),
+          getCached("agent_magazine"),
+          fetchMarciDistincte(),
           loadTvaRate(),
         ]);
 
@@ -1584,8 +2249,6 @@
           (prodErr && "Eroare la încărcarea stocului: " + prodErr.message) ||
           (profErr &&
             "Eroare la încărcarea profilurilor: " + profErr.message) ||
-          (liniiErr &&
-            "Eroare la încărcarea comenzilor: " + liniiErr.message) ||
           null;
         if (error) return { error };
 
@@ -1595,29 +2258,16 @@
           asoErr ? [] : asocieri,
           agenti,
         );
-        const marci = distinctMarci([...(produse || []), ...(linii || [])]);
-        const produsComandaMap = buildProdusComandaMap(
-          linii,
-          comErr ? [] : comenzi,
-        );
-        const comandaCtx = {
-          map: produsComandaMap,
-          linii: linii || [],
-          profiles: profiles || [],
-        };
 
-        const stocDisponibil = (produse || []).filter(
-          (p) => !p.magazin_id && !p.vanzare_directa,
-        );
-        const produseTrimise = (produse || []).filter(
-          (p) => (p.magazin_id || p.vanzare_directa) && !p.vandut,
-        );
-
-        const reservedIds = new Set(
-          (linii || [])
-            .filter((l) => l.status_linie === "asignat" && l.produs_id)
-            .map((l) => l.produs_id),
-        );
+        const produsIds = (produse || []).map((p) => p.id);
+        const { data: linii } = produsIds.length
+          ? await supa
+              .from("comanda_produse")
+              .select("produs_id")
+              .in("produs_id", produsIds)
+              .eq("status_linie", "asignat")
+          : { data: [] };
+        const reservedIds = new Set((linii || []).map((l) => l.produs_id));
 
         const tvaProcentCurent = Math.round(TVA_RATE * 10000) / 100;
 
@@ -1627,17 +2277,19 @@
           magazine,
           agentMagazinMap,
           marci,
-          comandaCtx,
-          stocDisponibil,
-          produseTrimise,
+          stocDisponibil: produse || [],
           reservedIds,
           tvaProcentCurent,
+          totalCount: count || 0,
         };
       }
 
       async function renderDepozitCentral(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
-        const d = await loadDepozitData();
+        const myGen = renderGen;
+        const pageKey = currentTabKey;
+        const d = await loadStocCentralData(pageKey);
+        if (isStaleRender(myGen)) return;
         if (d.error) {
           container.innerHTML = `<div class="text-red-600 text-sm">${esc(d.error)}</div>`;
           return;
@@ -1645,9 +2297,7 @@
 
         container.innerHTML = `
     <div class="mb-4 flex items-center justify-end gap-2 text-sm">
-      <label for="tva-procent-input" class="text-slate-500">TVA (%)</label>
-      <input id="tva-procent-input" type="number" step="0.01" min="0" value="${d.tvaProcentCurent}" class="border rounded-md px-2 py-1.5 text-sm w-20" title="Cotă TVA folosită la calculul automat al 'Preț cu TVA' pentru produse noi sau editate. Nu recalculează retroactiv produsele deja salvate.">
-      <button id="btn-salveaza-tva" class="rounded-md px-3 py-1.5 text-sm font-medium border" style="border-color:var(--line)">Salvează</button>
+      <button id="btn-deschide-tva" class="rounded-md px-2 py-0.5 text-[10px] font-semibold border text-slate-500 hover:bg-slate-50 hover:text-slate-700" style="border-color:var(--line)" title="Setare cotă TVA">TVA</button>
     </div>
     <div id="depozit-subtab-content"></div>`;
 
@@ -1662,13 +2312,49 @@
           d.agentMagazinMap,
           d.marci,
           refresh,
+          d.totalCount,
+          pageKey,
         );
+
+        document
+          .getElementById("btn-deschide-tva")
+          .addEventListener("click", () => {
+            renderTvaModal(d.tvaProcentCurent);
+          });
+      }
+
+      function renderTvaModal(tvaProcentCurent) {
+        const overlay = document.createElement("div");
+        overlay.id = "tva-overlay";
+        overlay.className =
+          "fixed inset-0 z-40 flex items-center justify-center px-4";
+        overlay.style.background = "rgba(15,20,25,0.55)";
+        overlay.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm fade-in relative">
+      <button type="button" id="tva-modal-close" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-xl leading-none" title="Închide">✕</button>
+      <h2 class="text-lg font-bold mb-4 pr-6">Setare TVA</h2>
+      <div class="flex items-center gap-2 text-sm mb-2">
+        <label for="tva-procent-input" class="text-slate-500">TVA (%)</label>
+        <input id="tva-procent-input" type="number" step="0.01" min="0" value="${tvaProcentCurent}" class="border rounded-md px-2 py-1.5 text-sm w-20" title="Cotă TVA folosită la calculul automat al 'Preț cu TVA' pentru produse noi sau editate. Nu recalculează retroactiv produsele deja salvate.">
+        <button id="btn-salveaza-tva" class="rounded-md px-3 py-1.5 text-sm font-medium border" style="border-color:var(--line)">Salvează</button>
+      </div>
+      <p id="tva-modal-msg" class="text-sm mt-2"></p>
+    </div>`;
+        document.body.appendChild(overlay);
+
+        document
+          .getElementById("tva-modal-close")
+          .addEventListener("click", () => overlay.remove());
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
 
         document
           .getElementById("btn-salveaza-tva")
           .addEventListener("click", async () => {
             const btn = document.getElementById("btn-salveaza-tva");
             const input = document.getElementById("tva-procent-input");
+            const msg = document.getElementById("tva-modal-msg");
             const procent = parseFloat(input.value);
             if (isNaN(procent) || procent < 0) {
               toast("Introdu un procent de TVA valid.", true);
@@ -1683,15 +2369,113 @@
               toast("Eroare la salvarea TVA: " + error.message, true);
               return;
             }
+            if (msg) {
+              msg.className = "text-sm mt-2 text-emerald-600";
+              msg.textContent = `TVA actualizat la ${procent}%.`;
+            }
             toast(
               `TVA actualizat la ${procent}%. Se aplică produselor noi sau editate ulterior.`,
             );
           });
       }
 
+      // Produse trimise: produsele alocate unui magazin sau marcate
+      // "vânzare directă", nevândute încă. comenzi/comanda_produse sunt
+      // interogate doar pentru produsele din pagina curentă, ca să se poată
+      // afișa numărul comenzii de origine lângă produs.
+      async function loadProduseTrimiseData(pageKey) {
+        const termenCautare = tabSearchTerms[currentTabKey] || "";
+        const { from, to } = rangeFor(pageKey);
+        let produseQuery = supa
+          .from("produse")
+          .select("*", { count: "exact" })
+          .or("magazin_id.not.is.null,vanzare_directa.eq.true")
+          .eq("vandut", false)
+          .order("created_at", { ascending: true })
+          .range(from, to);
+        const orFilter = buildSearchOrFilter(
+          termenCautare,
+          PRODUSE_CAUTARE_COLOANE,
+        );
+        if (orFilter) produseQuery = produseQuery.or(orFilter);
+
+        const [
+          { data: produse, error: prodErr, count },
+          { data: profiles, error: profErr },
+          { data: asocieri, error: asoErr },
+          marci,
+        ] = await Promise.all([
+          produseQuery,
+          getCached("profiles"),
+          getCached("agent_magazine"),
+          fetchMarciDistincte(),
+        ]);
+
+        const error =
+          (prodErr && "Eroare la încărcarea stocului: " + prodErr.message) ||
+          (profErr &&
+            "Eroare la încărcarea profilurilor: " + profErr.message) ||
+          null;
+        if (error) return { error };
+
+        const agenti = (profiles || []).filter((p) => p.role === "agent");
+        const magazine = (profiles || []).filter((p) => p.role === "magazin");
+        const agentMagazinMap = buildAgentMagazinMap(
+          asoErr ? [] : asocieri,
+          agenti,
+        );
+
+        const produsIds = (produse || []).map((p) => p.id);
+        const { data: liniiProduse } = produsIds.length
+          ? await supa
+              .from("comanda_produse")
+              .select("*")
+              .in("produs_id", produsIds)
+              .eq("status_linie", "trimis")
+          : { data: [] };
+        const comandaIds = Array.from(
+          new Set(
+            (liniiProduse || []).map((l) => l.comanda_id).filter(Boolean),
+          ),
+        );
+        // Se reia comanda_produse, de data asta după comanda_id (nu produs_id),
+        // ca modalul "comandă inițială" să arate TOATE liniile comenzii —
+        // nu doar linia produsului aflat în pagina curentă.
+        const [{ data: linii }, { data: comenzi }] = comandaIds.length
+          ? await Promise.all([
+              supa
+                .from("comanda_produse")
+                .select("*")
+                .in("comanda_id", comandaIds),
+              supa.from("comenzi").select("*").in("id", comandaIds),
+            ])
+          : [{ data: [] }, { data: [] }];
+
+        const produsComandaMap = buildProdusComandaMap(liniiProduse, comenzi);
+        const comandaCtx = {
+          map: produsComandaMap,
+          linii: linii || [],
+          profiles: profiles || [],
+        };
+
+        return {
+          error: null,
+          agenti,
+          magazine,
+          agentMagazinMap,
+          marci,
+          produseTrimise: produse || [],
+          comandaCtx,
+          totalCount: count || 0,
+        };
+      }
+
       async function renderProduseTrimiseTab(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
-        const d = await loadDepozitData();
+        const myGen = renderGen;
+        const pageKey = currentTabKey;
+        const d = await loadProduseTrimiseData(pageKey);
+        if (isStaleRender(myGen)) return;
         if (d.error) {
           container.innerHTML = `<div class="text-red-600 text-sm">${esc(d.error)}</div>`;
           return;
@@ -1706,24 +2490,31 @@
           d.marci,
           refresh,
           d.comandaCtx,
+          d.totalCount,
+          pageKey,
         );
         bindVanzareButoane(d.produseTrimise, refresh);
       }
 
-      function productRow(p, nr, agenti, magazine, isReserved, comandaInfo) {
-        const categorieCustom =
-          !!p.categorie && !CATEGORII_PRODUS.includes(p.categorie);
-        const categorieOptions = CATEGORII_PRODUS.map(
-          (c) =>
-            `<option value="${esc(c)}" ${p.categorie === c ? "selected" : ""}>${esc(c)}</option>`,
-        ).join("");
-        const currentMagazin = magazine.find((m) => m.id === p.magazin_id);
-        const currentMagazinLabel = currentMagazin
-          ? `${currentMagazin.nume || currentMagazin.email}${currentMagazin.filiala ? " - " + currentMagazin.filiala : ""}`
-          : p.vanzare_directa
-            ? "Vânzare directă"
-            : "";
-
+      function productRow(
+        p,
+        nr,
+        agenti,
+        magazine,
+        isReserved,
+        comandaInfo,
+        opts,
+      ) {
+        const showAgent = !opts || opts.showAgent !== false;
+        const showMagazin = !!(opts && opts.showMagazin);
+        const magazinLabel = (() => {
+          const m = magazine.find((x) => x.id === p.magazin_id);
+          return m
+            ? `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`
+            : p.vanzare_directa
+              ? "Vânzare directă"
+              : "—";
+        })();
         return `
   <tr class="border-b last:border-0 align-top ${isReserved ? "bg-amber-50/60" : ""}" style="border-color:var(--line)" data-prow="${p.id}">
     <td class="px-3 py-3 text-slate-400">${nr}</td>
@@ -1734,55 +2525,25 @@
         ${comandaInfo ? `<button type="button" class="comanda-produs-link inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 underline decoration-dotted hover:text-[var(--teal-dark)]" title="Deschide comanda inițială">${esc(comandaInfo.numar_comanda)}</button>` : ""}
       </div>
     </td>
-    <td class="px-3 py-3">
-      <div class="relative">
-        <input type="text" data-field="agent" value="${esc(p.agent || "")}" placeholder="Caută agent..." autocomplete="off" class="agent-input border rounded-md px-2 py-1.5 text-xs w-28">
-        <div class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-32 overflow-y-auto text-xs" style="border-color:var(--line)"></div>
-      </div>
-    </td>
+    ${showAgent ? `<td class="px-3 py-3 text-xs">${esc(p.agent || "—")}</td>` : ""}
+    ${showMagazin ? `<td class="px-3 py-3 text-xs">${esc(magazinLabel)}</td>` : ""}
     <td class="px-3 py-3 text-xs text-slate-500 data-comenzii-cell">${p.data_comenzii ? new Date(p.data_comenzii).toLocaleDateString("ro-RO") : "—"}</td>
-    <td class="px-3 py-3">
-      <div class="categorie-wrap relative w-32">
-        <select data-field="categorie" class="categorie-select border rounded-md px-2 py-1.5 text-xs w-32 ${categorieCustom ? "hidden" : ""}">
-          <option value="">—</option>
-          ${categorieOptions}
-          <option value="__alta__">Altă categorie</option>
-        </select>
-        <div class="categorie-alta-wrap flex items-center gap-1 ${categorieCustom ? "" : "hidden"}">
-          <input type="text" data-field="categorie_alta" class="categorie-alta-input border rounded-md px-2 py-1.5 text-xs w-24" placeholder="Specifică" value="${categorieCustom ? esc(p.categorie) : ""}">
-          <button type="button" class="categorie-alta-back text-slate-400 hover:text-slate-600 text-xs" title="Alege din listă">↺</button>
-        </div>
-      </div>
-    </td>
-    <td class="px-3 py-3">
-      <div class="relative">
-        <input type="text" data-field="marca" value="${esc(p.marca || "")}" autocomplete="off" class="marca-input border rounded-md px-2 py-1.5 text-xs w-24">
-        <div class="marca-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-32 overflow-y-auto text-xs" style="border-color:var(--line)"></div>
-      </div>
-    </td>
-    <td class="px-3 py-3"><input type="text" data-field="culoare" value="${esc(p.culoare || "")}" class="border rounded-md px-2 py-1.5 text-xs w-20"></td>
-    <td class="px-3 py-3"><input type="text" data-field="vin" value="${esc(p.vin || "")}" class="border rounded-md px-2 py-1.5 text-xs w-32 font-mono"></td>
-    <td class="px-3 py-3"><input type="number" step="0.01" data-field="pret_intrare" value="${p.pret_intrare ?? ""}" class="price-input border rounded-md px-2 py-1.5 text-xs w-24"></td>
-    <td class="px-3 py-3"><input type="number" step="0.01" data-field="pret_vanzare" value="${p.pret_vanzare ?? ""}" class="price-input vanzare-input border rounded-md px-2 py-1.5 text-xs w-24"></td>
-    <td class="px-3 py-3"><input type="number" step="0.01" data-field="adaos" value="${p.adaos ?? ""}" class="calc-input adaos-input border rounded-md px-2 py-1.5 text-xs w-24 font-medium"></td>
-    <td class="px-3 py-3"><input type="number" step="0.01" data-field="alte_costuri" value="${p.alte_costuri ?? ""}" class="price-input border rounded-md px-2 py-1.5 text-xs w-24"></td>
-    <td class="px-3 py-3"><input type="number" step="0.01" data-field="total_fara_tva" value="${p.total_fara_tva ?? ""}" class="calc-input total-input border rounded-md px-2 py-1.5 text-xs w-24 font-medium"></td>
-    <td class="px-3 py-3"><input type="number" step="0.01" data-field="pret_cu_tva" value="${p.pret_cu_tva ?? ""}" class="calc-input tva-input border rounded-md px-2 py-1.5 text-xs w-24 font-medium"></td>
-    <td class="px-3 py-3"><input type="number" step="0.01" data-field="pret_recomandat" value="${p.pret_recomandat ?? ""}" class="border rounded-md px-2 py-1.5 text-xs w-24"></td>
+    <td class="px-3 py-3 text-xs">${esc(p.categorie || "—")}</td>
+    <td class="px-3 py-3 text-xs">${esc(p.marca || "—")}</td>
+    <td class="px-3 py-3 text-xs">${esc(p.culoare || "—")}</td>
+    <td class="px-3 py-3 text-xs font-mono">${esc(p.vin || "—")}</td>
+    <td class="px-3 py-3 text-xs">${fmtNum(p.pret_intrare)}</td>
+    <td class="px-3 py-3 text-xs">${fmtNum(p.pret_vanzare)}</td>
+    <td class="px-3 py-3 text-xs">${fmtNum(p.adaos)}</td>
+    <td class="px-3 py-3 text-xs">${fmtNum(p.alte_costuri)}</td>
+    <td class="px-3 py-3 text-xs">${fmtNum(p.total_fara_tva)}</td>
+    <td class="px-3 py-3 text-xs">${fmtNum(p.pret_cu_tva)}</td>
+    <td class="px-3 py-3 text-xs">${fmtNum(p.pret_recomandat)}</td>
     <td class="px-3 py-3 text-xs">${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</td>
-    <td class="px-3 py-3">
-      <div class="relative">
-        <input type="text" class="magazin-input border rounded-md px-2 py-1.5 text-xs w-28" placeholder="— (la vânzare)" autocomplete="off" value="${esc(currentMagazinLabel)}">
-        <input type="hidden" class="magazin-id-input" value="${p.magazin_id || ""}">
-        <div class="magazin-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-32 overflow-y-auto text-xs" style="border-color:var(--line)"></div>
-      </div>
-    </td>
-    <td class="px-3 py-3 telefon-cell text-xs text-slate-500">${esc(p.telefon || "—")}</td>
-    <td class="px-3 py-3 adresa-cell text-xs text-slate-500 max-w-[160px] truncate" title="${esc(p.adresa_facturare || "")}">${esc(p.adresa_facturare || "—")}</td>
+    <td class="px-3 py-3 text-xs text-slate-500">${esc(p.telefon || "—")}</td>
+    <td class="px-3 py-3 text-xs text-slate-500 adresa-cell max-w-[160px]" title="${esc(p.adresa_facturare || "")}"><span class="adresa-clamp">${esc(p.adresa_facturare || "—")}</span></td>
     <td class="px-3 py-3 whitespace-nowrap">
-      <button data-save-produs="${p.id}" class="save-produs-btn btn-primary rounded-md px-3 py-1.5 text-xs">Salvează</button>
-      <button data-delete-produs="${p.id}" class="delete-produs-btn rounded-md px-3 py-1.5 text-xs font-semibold ml-1 bg-red-50 text-red-600 hover:bg-red-100">Șterge</button>
-      ${p.vanzare_directa && !p.vandut ? `<button type="button" data-vinde-produs="${p.id}" class="vinde-produs-btn rounded-md px-3 py-1.5 text-xs font-semibold ml-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100">Vinde produsul</button>` : ""}
+      ${p.vanzare_directa && !p.vandut ? `<button type="button" data-vinde-produs="${p.id}" class="vinde-produs-btn rounded-md px-3 py-1.5 text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100">Vinde produsul</button>` : ""}
     </td>
   </tr>`;
       }
@@ -1810,6 +2571,7 @@
             refresh,
             marci,
             poateVanzareDirecta,
+            agentMagazinMap,
           );
         });
 
@@ -1827,232 +2589,13 @@
           });
         }
 
-        const agentInput = row.querySelector(".agent-input");
-        attachAgentAutocomplete(
-          agentInput,
-          row.querySelector(".agent-suggestions"),
-          agenti.map((a) => a.nume || a.email),
-        );
-
-        attachAgentAutocomplete(
-          row.querySelector(".marca-input"),
-          row.querySelector(".marca-suggestions"),
-          marci,
-        );
-
-        const catSelect = row.querySelector(".categorie-select");
-        const catAltaWrap = row.querySelector(".categorie-alta-wrap");
-        const catAlta = row.querySelector(".categorie-alta-input");
-        catSelect.addEventListener("change", () => {
-          if (catSelect.value === "__alta__") {
-            catSelect.classList.add("hidden");
-            catAltaWrap.classList.remove("hidden");
-            catAlta.value = "";
-            catAlta.focus();
-          }
-        });
-        row
-          .querySelector(".categorie-alta-back")
-          .addEventListener("click", () => {
-            catAltaWrap.classList.add("hidden");
-            catSelect.classList.remove("hidden");
-            catSelect.value = "";
-            catAlta.value = "";
-          });
-
-        const intrareInput = row.querySelector('[data-field="pret_intrare"]');
-        const vanzareInput = row.querySelector('[data-field="pret_vanzare"]');
-        const alteInput = row.querySelector('[data-field="alte_costuri"]');
-        const adaosInput = row.querySelector(".adaos-input");
-        const totalInput = row.querySelector(".total-input");
-        const tvaInput = row.querySelector(".tva-input");
-        attachPriceAutoCalc({
-          intrareInput,
-          vanzareInput,
-          adaosInput,
-          alteInput,
-          totalInput,
-          tvaInput,
-        });
-
-        const magazinInput = row.querySelector(".magazin-input");
-        const magazinIdInput = row.querySelector(".magazin-id-input");
-        const telefonCell = row.querySelector(".telefon-cell");
         const adresaCell = row.querySelector(".adresa-cell");
-        attachMagazinAutocomplete(
-          magazinInput,
-          row.querySelector(".magazin-suggestions"),
-          magazinIdInput,
-          magazine,
-          (m) => {
-            telefonCell.textContent = m ? m.telefon || "—" : "—";
-            adresaCell.textContent = m ? m.adresa_facturare || "—" : "—";
-            adresaCell.title = m ? m.adresa_facturare || "" : "";
-
-            if (m && agentMagazinMap.has(m.id)) {
-              agentInput.value = agentMagazinMap.get(m.id);
-            }
-          },
-        );
-
-        row
-          .querySelector(".save-produs-btn")
-          .addEventListener("click", async () => {
-            const btn = row.querySelector(".save-produs-btn");
-            btn.disabled = true;
-            btn.textContent = "Se salvează...";
-
-            const agentVal =
-              row.querySelector('[data-field="agent"]').value.trim() || null;
-            const categorieVal = !catAltaWrap.classList.contains("hidden")
-              ? catAlta.value.trim() || null
-              : catSelect.value || null;
-            const intrare = parseFloat(intrareInput.value) || null;
-            const vanzare = parseFloat(vanzareInput.value) || null;
-            const alte = parseFloat(alteInput.value) || 0;
-            const adaos = adaosInput.value.trim()
-              ? parseFloat(adaosInput.value)
-              : null;
-            const total = totalInput.value.trim()
-              ? parseFloat(totalInput.value)
-              : null;
-            const cuTva = tvaInput.value.trim()
-              ? parseFloat(tvaInput.value)
-              : null;
-            const pretRecomandatCell = row.querySelector(
-              '[data-field="pret_recomandat"]',
-            );
-            const pretRecomandat = pretRecomandatCell.value.trim()
-              ? parseFloat(pretRecomandatCell.value)
-              : null;
-            const magazinId = magazinIdInput.value || null;
-            const magazinInputVal = magazinInput.value.trim();
-            const magazinProfil = magazine.find((m) => m.id === magazinId);
-
-            const campMagazinGolit = !magazinId && !magazinInputVal;
-
-            const magazinSchimbat =
-              magazinId !== (p.magazin_id || null) ||
-              (!!p.vanzare_directa && campMagazinGolit);
-
-            const eraTrimis = !!(p.magazin_id || p.vanzare_directa);
-            const esteRetragere = campMagazinGolit && eraTrimis;
-
-            const payload = {
-              agent: esteRetragere ? null : agentVal,
-              categorie: categorieVal,
-              marca:
-                row.querySelector('[data-field="marca"]').value.trim() || null,
-              culoare:
-                row.querySelector('[data-field="culoare"]').value.trim() ||
-                null,
-              vin: row.querySelector('[data-field="vin"]').value.trim() || null,
-              pret_intrare: intrare,
-              pret_vanzare: vanzare,
-              adaos,
-              alte_costuri: alte,
-              total_fara_tva: total,
-              pret_cu_tva: cuTva,
-              pret_recomandat: pretRecomandat,
-              magazin_id: magazinId,
-              telefon: esteRetragere
-                ? null
-                : magazinProfil
-                  ? magazinProfil.telefon || null
-                  : p.telefon || null,
-              adresa_facturare: esteRetragere
-                ? null
-                : magazinProfil
-                  ? magazinProfil.adresa_facturare || null
-                  : p.adresa_facturare || null,
-              updated_at: new Date().toISOString(),
-            };
-
-            if (magazinSchimbat) {
-              payload.vanzare_directa = false;
-            }
-            if (esteRetragere) {
-              payload.data_comenzii = null;
-            } else if (magazinId && magazinSchimbat) {
-              payload.data_comenzii = new Date().toISOString().slice(0, 10);
-            }
-
-            const { error } = await supa
-              .from("produse")
-              .update(payload)
-              .eq("id", p.id);
-
-            if (error) {
-              btn.disabled = false;
-              btn.textContent = "Salvează";
-              toast("Eroare: " + error.message, true);
-              return;
-            }
-
-            if (esteRetragere) {
-              const { data: liniiRealocate } = await supa
-                .from("comanda_produse")
-                .update({ status_linie: "realocat" })
-                .eq("produs_id", p.id)
-                .eq("status_linie", "trimis")
-                .select();
-              const comenziAfectate = new Set(
-                (liniiRealocate || []).map((l) => l.comanda_id),
-              );
-              for (const comandaId of comenziAfectate) {
-                const { data: toateLiniile } = await supa
-                  .from("comanda_produse")
-                  .select("status_linie")
-                  .eq("comanda_id", comandaId);
-                await supa
-                  .from("comenzi")
-                  .update({
-                    status: computeComandaStatus(toateLiniile || []),
-                    updated_at: new Date().toISOString(),
-                  })
-                  .eq("id", comandaId);
-              }
-            }
-
-            btn.disabled = false;
-            btn.textContent = "Salvează";
-
-            Object.assign(p, payload);
-            toast("Produs salvat cu succes.");
-            if (magazinSchimbat) {
-              refresh();
-              return;
-            }
-            if (payload.data_comenzii) {
-              row.querySelector(".data-comenzii-cell").textContent = new Date(
-                payload.data_comenzii,
-              ).toLocaleDateString("ro-RO");
-            }
+        if (adresaCell) {
+          adresaCell.addEventListener("click", () => {
+            const span = adresaCell.querySelector(".adresa-clamp");
+            if (span) span.classList.toggle("adresa-expanded");
           });
-
-        row
-          .querySelector(".delete-produs-btn")
-          .addEventListener("click", async () => {
-            const ok = confirm(
-              `Ștergi definitiv produsul ${p.id_produs}? Acțiunea nu poate fi anulată.`,
-            );
-            if (!ok) return;
-            const btn = row.querySelector(".delete-produs-btn");
-            btn.disabled = true;
-            btn.textContent = "Se șterge...";
-            const { error } = await supa
-              .from("produse")
-              .delete()
-              .eq("id", p.id);
-            if (error) {
-              toast("Eroare la ștergere: " + error.message, true);
-              btn.disabled = false;
-              btn.textContent = "Șterge";
-              return;
-            }
-            toast("Produs șters din stoc.");
-            row.remove();
-          });
+        }
       }
 
       function renderAddProductModal(
@@ -2158,18 +2701,14 @@
           <input type="hidden" id="add-civ" value="nu">
         </div>
         <p class="text-xs text-slate-400"></p>
-        <div class="flex gap-2 pt-1">
-          <button type="button" id="add-produs-cancel" class="flex-1 rounded-lg py-2 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
-          <button type="submit" class="flex-1 btn-primary rounded-lg py-2 text-sm">Salvează produsul</button>
+        <div class="flex justify-center pt-1">
+          <button type="submit" class="btn-primary rounded-lg py-2 px-8 text-sm">Salvează produsul</button>
         </div>
         <p id="add-produs-msg" class="text-sm text-center"></p>
       </form>
     </div>`;
         document.body.appendChild(overlay);
 
-        document
-          .getElementById("add-produs-cancel")
-          .addEventListener("click", () => overlay.remove());
         document
           .getElementById("add-produs-close")
           .addEventListener("click", () => overlay.remove());
@@ -2325,6 +2864,12 @@
 
             overlay.remove();
             toast("Produs adăugat cu succes în stoc.");
+            inregistreazaLog(
+              "produs",
+              produsNou.id,
+              "Adăugare în Depozitul central",
+              `ID produs: ${produsNou.id_produs}`,
+            );
             onSaved();
             if (onCreated) onCreated(produsNou);
           });
@@ -2337,6 +2882,8 @@
         onSaved,
         marci,
         poateVanzareDirecta,
+        agentMagazinMap,
+        showMagazinSiSterge = true,
       ) {
         const overlay = document.createElement("div");
         overlay.id = "edit-produs-overlay";
@@ -2351,30 +2898,7 @@
             `<option value="${esc(c)}" ${p.categorie === c ? "selected" : ""}>${esc(c)}</option>`,
         ).join("");
 
-        overlay.innerHTML = `
-    <div class="bg-white rounded-2xl shadow-xl p-5 w-full max-w-lg fade-in my-auto">
-      <div class="flex items-start justify-between mb-1">
-        <h2 class="text-base font-bold">Editează produsul</h2>
-        <button type="button" id="edit-produs-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
-      </div>
-      <p class="text-sm text-slate-500 mb-3">Modifică datele produsului.</p>
-      <form id="form-edit-produs" class="space-y-2.5">
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            ${produsFieldLabel("ID produs")}
-            <input type="text" value="${esc(p.id_produs)}" disabled class="${produsInputBase()} bg-slate-50 font-mono text-slate-500">
-          </div>
-          <div>${produsFieldLabel("VIN")}<input type="text" id="edit-vin" class="${produsInputBase()} font-mono" value="${esc(p.vin || "")}"></div>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            ${produsFieldLabel("Agent")}
-            <div class="relative">
-              <input type="text" id="edit-agent" class="${produsInputBase()}" placeholder="Caută sau scrie numele agentului" autocomplete="off" value="${esc(p.agent || "")}">
-              <div id="edit-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
-            </div>
-          </div>
-          <div>
+        const categorieFieldHtml = `
             ${produsFieldLabel("Categorie produs")}
             <select id="edit-categorie" class="${produsInputBase()} ${categorieCustom ? "hidden" : ""}">
               <option value="">Alege...</option>
@@ -2384,16 +2908,99 @@
             <div id="edit-categorie-alta-wrap" class="${categorieCustom ? "" : "hidden"} flex items-center gap-1">
               <input type="text" id="edit-categorie-alta" class="${produsInputBase()}" placeholder="Specifică" value="${categorieCustom ? esc(p.categorie) : ""}">
               <button type="button" id="edit-categorie-alta-back" class="text-slate-400 hover:text-slate-600 text-xs shrink-0" title="Alege din listă">↺</button>
+            </div>`;
+
+        const marcaFieldHtml = `${produsFieldLabel("Marcă")}
+            <div class="relative">
+              <input type="text" id="edit-marca" class="${produsInputBase()}" autocomplete="off" value="${esc(p.marca || "")}">
+              <div id="edit-marca-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+            </div>`;
+
+        const discountFieldHtml = `
+            <div class="flex items-center justify-between mb-0.5">
+              <label class="block text-[11px] font-medium text-slate-600">Discount</label>
+              <div class="flex gap-1">
+                <button type="button" data-tip="suma" class="edit-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border ${(p.discount_tip || "suma") === "suma" ? "btn-primary" : ""}" style="border-color:var(--line)">Sumă</button>
+                <button type="button" data-tip="procent" class="edit-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border ${p.discount_tip === "procent" ? "btn-primary" : ""}" style="border-color:var(--line)">%</button>
+              </div>
+            </div>
+            <input type="number" step="0.01" min="0" id="edit-discount" class="${produsInputBase()}" value="${p.discount ?? ""}">
+            <input type="hidden" id="edit-discount-tip" value="${p.discount_tip || "suma"}">`;
+
+        const civFieldHtml = `
+            <div class="flex items-center justify-between">
+              <label class="block text-[11px] font-medium text-slate-600">C.I.V.</label>
+              <div class="flex gap-1">
+                <button type="button" data-civ="nu" class="edit-civ-btn rounded-md px-2.5 py-1 text-xs font-medium border ${!p.civ ? "btn-primary" : ""}" style="border-color:var(--line)">Nu</button>
+                <button type="button" data-civ="da" class="edit-civ-btn rounded-md px-2.5 py-1 text-xs font-medium border ${p.civ ? "btn-primary" : ""}" style="border-color:var(--line)">Da</button>
+              </div>
+            </div>
+            <input type="hidden" id="edit-civ" value="${p.civ ? "da" : "nu"}">`;
+
+        let camputiFieldsHtml;
+        if (showMagazinSiSterge) {
+          const currentMagazin = magazine.find((m) => m.id === p.magazin_id);
+          const currentMagazinLabel = currentMagazin
+            ? `${currentMagazin.nume || currentMagazin.email}${currentMagazin.filiala ? " - " + currentMagazin.filiala : ""}`
+            : p.vanzare_directa
+              ? "Vânzare directă"
+              : "";
+          camputiFieldsHtml = `
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            ${produsFieldLabel("Agent")}
+            <div class="relative">
+              <input type="text" id="edit-agent" class="${produsInputBase()}" placeholder="Caută sau scrie numele agentului" autocomplete="off" value="${esc(p.agent || "")}">
+              <div id="edit-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+            </div>
+          </div>
+          <div>
+            ${produsFieldLabel("Magazin")}
+            <div class="relative">
+              <input type="text" id="edit-magazin" class="${produsInputBase()}" placeholder="— (la vânzare)" autocomplete="off" value="${esc(currentMagazinLabel)}">
+              <input type="hidden" id="edit-magazin-id" value="${p.magazin_id || ""}">
+              <div id="edit-magazin-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-2">
-          <div>${produsFieldLabel("Marcă")}
+          <div>${categorieFieldHtml}</div>
+          <div>${marcaFieldHtml}</div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${produsFieldLabel("Culoare")}<input type="text" id="edit-culoare" class="${produsInputBase()}" value="${esc(p.culoare || "")}"></div>
+          <div>${produsFieldLabel("Preț de intrare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-intrare" class="${produsInputBase()} price-field" value="${p.pret_intrare ?? ""}"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
+          <div>${produsFieldLabel("Preț vânzare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-vanzare" class="${produsInputBase()} price-field" value="${p.pret_vanzare ?? ""}"></div>
+          <div>${produsFieldLabel("Adaos")}<input type="number" step="0.01" id="edit-adaos" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.adaos)}"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
+          <div>${produsFieldLabel("Alte costuri (fără TVA)")}<input type="number" step="0.01" id="edit-alte-costuri" class="${produsInputBase()} price-field" value="${p.alte_costuri ?? ""}"></div>
+          <div>${produsFieldLabel("Total (fără TVA)")}<input type="number" step="0.01" id="edit-total" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.total_fara_tva)}"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
+          <div>${produsFieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="edit-tva" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.pret_cu_tva)}"></div>
+          <div>${produsFieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="edit-pret-recomandat" class="${produsInputBase()}" value="${p.pret_recomandat ?? ""}"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${discountFieldHtml}</div>
+          <div>${civFieldHtml}</div>
+        </div>`;
+        } else {
+          camputiFieldsHtml = `
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            ${produsFieldLabel("Agent")}
             <div class="relative">
-              <input type="text" id="edit-marca" class="${produsInputBase()}" autocomplete="off" value="${esc(p.marca || "")}">
-              <div id="edit-marca-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+              <input type="text" id="edit-agent" class="${produsInputBase()}" placeholder="Caută sau scrie numele agentului" autocomplete="off" value="${esc(p.agent || "")}">
+              <div id="edit-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
+          <div>${categorieFieldHtml}</div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${marcaFieldHtml}</div>
           <div>${produsFieldLabel("Culoare")}<input type="text" id="edit-culoare" class="${produsInputBase()}" value="${esc(p.culoare || "")}"></div>
         </div>
         <div class="grid grid-cols-2 gap-2">
@@ -2410,28 +3017,30 @@
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>${produsFieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="edit-pret-recomandat" class="${produsInputBase()}" value="${p.pret_recomandat ?? ""}"></div>
+          <div>${discountFieldHtml}</div>
+        </div>
+        <div>${civFieldHtml}</div>`;
+        }
+
+        overlay.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl p-5 w-full max-w-lg fade-in my-auto">
+      <div class="flex items-start justify-between mb-1">
+        <div class="flex items-center gap-2">
+          <h2 class="text-base font-bold">Editează produsul</h2>
+          ${poateVedeaJurnal() ? logButtonHtml("edit-produs-log-btn") : ""}
+        </div>
+        <button type="button" id="edit-produs-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+      </div>
+      <p class="text-sm text-slate-500 mb-3">Modifică datele produsului.</p>
+      <form id="form-edit-produs" class="space-y-2.5">
+        <div class="grid grid-cols-2 gap-2">
           <div>
-            <div class="flex items-center justify-between mb-0.5">
-              <label class="block text-[11px] font-medium text-slate-600">Discount</label>
-              <div class="flex gap-1">
-                <button type="button" data-tip="suma" class="edit-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border ${(p.discount_tip || "suma") === "suma" ? "btn-primary" : ""}" style="border-color:var(--line)">Sumă</button>
-                <button type="button" data-tip="procent" class="edit-discount-tip-btn rounded-md px-2 py-0.5 text-[11px] font-medium border ${p.discount_tip === "procent" ? "btn-primary" : ""}" style="border-color:var(--line)">%</button>
-              </div>
-            </div>
-            <input type="number" step="0.01" min="0" id="edit-discount" class="${produsInputBase()}" value="${p.discount ?? ""}">
-            <input type="hidden" id="edit-discount-tip" value="${p.discount_tip || "suma"}">
+            ${produsFieldLabel("ID produs")}
+            <input type="text" value="${esc(p.id_produs)}" disabled class="${produsInputBase()} bg-slate-50 font-mono text-slate-500">
           </div>
+          <div>${produsFieldLabel("VIN")}<input type="text" id="edit-vin" class="${produsInputBase()} font-mono" value="${esc(p.vin || "")}"></div>
         </div>
-        <div>
-          <div class="flex items-center justify-between">
-            <label class="block text-[11px] font-medium text-slate-600">C.I.V.</label>
-            <div class="flex gap-1">
-              <button type="button" data-civ="nu" class="edit-civ-btn rounded-md px-2.5 py-1 text-xs font-medium border ${!p.civ ? "btn-primary" : ""}" style="border-color:var(--line)">Nu</button>
-              <button type="button" data-civ="da" class="edit-civ-btn rounded-md px-2.5 py-1 text-xs font-medium border ${p.civ ? "btn-primary" : ""}" style="border-color:var(--line)">Da</button>
-            </div>
-          </div>
-          <input type="hidden" id="edit-civ" value="${p.civ ? "da" : "nu"}">
-        </div>
+        ${camputiFieldsHtml}
         ${
           poateVanzareDirecta &&
           (currentProfile.role === "admin" ||
@@ -2439,9 +3048,13 @@
             ? `<button type="button" id="edit-vanzare-directa-btn" class="w-full rounded-lg py-2 text-sm font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200">Vânzare directă</button>`
             : ""
         }
-        <div class="flex gap-2 pt-1">
-          <button type="button" id="edit-produs-cancel" class="flex-1 rounded-lg py-2 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
-          <button type="submit" class="flex-1 btn-primary rounded-lg py-2 text-sm">Salvează modificările</button>
+        <div class="flex items-center justify-between gap-3 pt-1">
+          <button type="submit" class="btn-primary rounded-lg py-2 px-6 text-sm">Salvează modificările</button>
+          ${
+            showMagazinSiSterge
+              ? `<button type="button" id="edit-produs-delete" class="text-xs font-medium text-red-500 hover:text-red-700">Șterge produsul</button>`
+              : ""
+          }
         </div>
         <p id="edit-produs-msg" class="text-sm text-center"></p>
       </form>
@@ -2449,14 +3062,18 @@
         document.body.appendChild(overlay);
 
         document
-          .getElementById("edit-produs-cancel")
-          .addEventListener("click", () => overlay.remove());
-        document
           .getElementById("edit-produs-close")
           .addEventListener("click", () => overlay.remove());
         overlay.addEventListener("click", (e) => {
           if (e.target === overlay) overlay.remove();
         });
+
+        const editProdusLogBtn = document.getElementById("edit-produs-log-btn");
+        if (editProdusLogBtn) {
+          editProdusLogBtn.addEventListener("click", () => {
+            renderLogModal("produs", p.id, p.id_produs);
+          });
+        }
 
         const vanzareDirectaBtn = document.getElementById(
           "edit-vanzare-directa-btn",
@@ -2479,6 +3096,54 @@
           document.getElementById("edit-marca-suggestions"),
           marci || [],
         );
+
+        const magazinInputEl = document.getElementById("edit-magazin");
+        const magazinIdInputEl = document.getElementById("edit-magazin-id");
+        if (magazinInputEl) {
+          attachMagazinAutocomplete(
+            magazinInputEl,
+            document.getElementById("edit-magazin-suggestions"),
+            magazinIdInputEl,
+            magazine,
+            (m) => {
+              if (m && agentMagazinMap && agentMagazinMap.has(m.id)) {
+                document.getElementById("edit-agent").value =
+                  agentMagazinMap.get(m.id);
+              }
+            },
+          );
+        }
+
+        const deleteBtn = document.getElementById("edit-produs-delete");
+        if (deleteBtn) {
+          deleteBtn.addEventListener("click", async () => {
+            const ok = confirm(
+              `Ștergi definitiv produsul ${p.id_produs}? Acțiunea nu poate fi anulată.`,
+            );
+            if (!ok) return;
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = "Se șterge...";
+            const { error } = await supa
+              .from("produse")
+              .delete()
+              .eq("id", p.id);
+            if (error) {
+              toast("Eroare la ștergere: " + error.message, true);
+              deleteBtn.disabled = false;
+              deleteBtn.textContent = "Șterge produsul";
+              return;
+            }
+            overlay.remove();
+            toast("Produs șters din stoc.");
+            inregistreazaLog(
+              "produs",
+              p.id,
+              "Ștergere produs",
+              `ID produs: ${p.id_produs}`,
+            );
+            onSaved();
+          });
+        }
 
         const catSelect = document.getElementById("edit-categorie");
         const catAltaWrap = document.getElementById("edit-categorie-alta-wrap");
@@ -2581,31 +3246,73 @@
               : 0;
             const civVal = editCiv.value === "da";
 
+            const payload = {
+              agent: agentVal,
+              categorie: categorieVal,
+              marca: document.getElementById("edit-marca").value.trim() || null,
+              culoare:
+                document.getElementById("edit-culoare").value.trim() || null,
+              vin: document.getElementById("edit-vin").value.trim() || null,
+              pret_intrare: intrare,
+              pret_vanzare: vanzare,
+              alte_costuri: alte,
+              adaos,
+              total_fara_tva: total,
+              pret_cu_tva: cuTva,
+              pret_recomandat: pretRecomandat,
+              discount: discountVal,
+              discount_tip: editDiscountTip.value,
+              civ: civVal,
+              updated_at: new Date().toISOString(),
+            };
+
+            let esteRetragere = false;
+            let esteTrimitereNoua = false;
+            let magazinLogLabel = "";
+            if (magazinInputEl) {
+              const magazinId = magazinIdInputEl.value || null;
+              const magazinInputVal = magazinInputEl.value.trim();
+              const magazinProfil = magazine.find((m) => m.id === magazinId);
+
+              const campMagazinGolit = !magazinId && !magazinInputVal;
+              const magazinSchimbat =
+                magazinId !== (p.magazin_id || null) ||
+                (!!p.vanzare_directa && campMagazinGolit);
+              const eraTrimis = !!(p.magazin_id || p.vanzare_directa);
+              esteRetragere = campMagazinGolit && eraTrimis;
+              esteTrimitereNoua =
+                magazinSchimbat && !!magazinId && !esteRetragere;
+              if (esteTrimitereNoua) {
+                magazinLogLabel = magazinProfil
+                  ? `${magazinProfil.nume || magazinProfil.email}${magazinProfil.filiala ? " - " + magazinProfil.filiala : ""}`
+                  : magazinInputVal;
+              }
+
+              payload.agent = esteRetragere ? null : agentVal;
+              payload.magazin_id = magazinId;
+              payload.telefon = esteRetragere
+                ? null
+                : magazinProfil
+                  ? magazinProfil.telefon || null
+                  : p.telefon || null;
+              payload.adresa_facturare = esteRetragere
+                ? null
+                : magazinProfil
+                  ? magazinProfil.adresa_facturare || null
+                  : p.adresa_facturare || null;
+
+              if (magazinSchimbat) payload.vanzare_directa = false;
+              if (esteRetragere) payload.data_comenzii = null;
+              else if (magazinId && magazinSchimbat)
+                payload.data_comenzii = new Date().toISOString().slice(0, 10);
+            }
+
             btn.disabled = true;
             btn.textContent = "Se salvează...";
 
             const { error } = await supa
               .from("produse")
-              .update({
-                agent: agentVal,
-                categorie: categorieVal,
-                marca:
-                  document.getElementById("edit-marca").value.trim() || null,
-                culoare:
-                  document.getElementById("edit-culoare").value.trim() || null,
-                vin: document.getElementById("edit-vin").value.trim() || null,
-                pret_intrare: intrare,
-                pret_vanzare: vanzare,
-                alte_costuri: alte,
-                adaos,
-                total_fara_tva: total,
-                pret_cu_tva: cuTva,
-                pret_recomandat: pretRecomandat,
-                discount: discountVal,
-                discount_tip: editDiscountTip.value,
-                civ: civVal,
-                updated_at: new Date().toISOString(),
-              })
+              .update(payload)
               .eq("id", p.id);
 
             if (error) {
@@ -2614,6 +3321,65 @@
               btn.disabled = false;
               btn.textContent = "Salvează modificările";
               return;
+            }
+
+            if (esteRetragere) {
+              const { data: liniiRealocate } = await supa
+                .from("comanda_produse")
+                .update({ status_linie: "realocat" })
+                .eq("produs_id", p.id)
+                .eq("status_linie", "trimis")
+                .select();
+              const comenziAfectate = new Set(
+                (liniiRealocate || []).map((l) => l.comanda_id),
+              );
+              for (const comandaId of comenziAfectate) {
+                const { data: toateLiniile } = await supa
+                  .from("comanda_produse")
+                  .select("status_linie")
+                  .eq("comanda_id", comandaId);
+                await supa
+                  .from("comenzi")
+                  .update({
+                    status: computeComandaStatus(toateLiniile || []),
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq("id", comandaId);
+              }
+            }
+
+            const modificariPret = modificariPretProdus(p, payload);
+
+            if (esteRetragere) {
+              inregistreazaLog(
+                "produs",
+                p.id,
+                "Retragere din magazin",
+                `ID produs: ${p.id_produs}`,
+              );
+            } else if (esteTrimitereNoua) {
+              inregistreazaLog(
+                "produs",
+                p.id,
+                "Trimitere către magazin",
+                `ID produs: ${p.id_produs} → ${magazinLogLabel}`,
+              );
+            } else if (modificariPret.length) {
+              modificariPret.forEach((m) => {
+                inregistreazaLog(
+                  "produs",
+                  p.id,
+                  `Editare "${m.label}"`,
+                  `${m.vechi} → ${m.nou}`,
+                );
+              });
+            } else {
+              inregistreazaLog(
+                "produs",
+                p.id,
+                "Editare date produs",
+                `ID produs: ${p.id_produs}`,
+              );
             }
 
             overlay.remove();
@@ -2682,6 +3448,7 @@
             const key = btn.dataset.statusFilter;
             if (key === "__all__") {
               comenziStatusFilter = [];
+              resetPage(currentTabKey);
               onChange();
               return;
             }
@@ -2694,6 +3461,7 @@
               next.push(key);
             }
             comenziStatusFilter = next;
+            resetPage(currentTabKey);
             onChange();
           });
         });
@@ -2738,6 +3506,34 @@
         return true;
       }
 
+      // Stoc central disponibil + rezervări "asignat" — folosit la
+      // crearea/revizuirea comenzilor (context.produse / context.allLinii).
+      // Interoghează doar candidații reali (stoc central nealocat, nevândut,
+      // fără vânzare directă) și liniile de comandă încă "asignat" (nu
+      // "trimis" — acelea au deja magazin_id pe produs și sunt oricum
+      // excluse de filtrul de mai jos), nu întregul istoric de produse/linii.
+      async function loadStocDisponibilPentruComenzi() {
+        const [
+          { data: produse, error: prodErr },
+          { data: linii, error: liniiErr },
+        ] = await Promise.all([
+          supa
+            .from("produse")
+            .select("*")
+            .is("magazin_id", null)
+            .eq("vandut", false)
+            .eq("vanzare_directa", false),
+          supa
+            .from("comanda_produse")
+            .select("*")
+            .eq("status_linie", "asignat"),
+        ]);
+        return {
+          produse: prodErr ? [] : produse || [],
+          allLinii: liniiErr ? [] : linii || [],
+        };
+      }
+
       function stocDisponibilPentruComenzi(context, excludeLinieId) {
         const reserved = new Set(
           (context.allLinii || [])
@@ -2766,6 +3562,22 @@
         if (allTrimis) return "onorata";
         if (anyTrimis) return "partial_onorata";
         return "in_asteptare";
+      }
+
+      // Recalculează și salvează statusul comenzii (comenzi.status) pe baza
+      // liniilor curente — apelat după orice modificare a unei linii de
+      // comandă (asignare/dezasignare/trimitere/ștergere/adăugare), ca
+      // status_comanda din DB să rămână corect fără să mai fie nevoie să
+      // recalculăm din linii la fiecare afișare a listei de comenzi.
+      // Nu suprascrie o comandă "anulata".
+      async function syncComandaStatus(comandaId, lines) {
+        if (!comandaId) return;
+        const status = computeComandaStatus(lines || []);
+        await supa
+          .from("comenzi")
+          .update({ status, updated_at: new Date().toISOString() })
+          .eq("id", comandaId)
+          .neq("status", "anulata");
       }
 
       async function nextOrderNumber() {
@@ -2994,9 +3806,8 @@
             <input type="number" id="comanda-termen-plata" min="0" step="1" class="${inputBase()}" placeholder="ex: 30">
           </div>
           <div>${fieldLabel("Observații (opțional)")}<textarea id="comanda-observatii" rows="2" class="${inputBase()}"></textarea></div>
-          <div class="flex gap-2 pt-1">
-            <button type="button" id="comanda-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
-            <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Trimite comanda</button>
+          <div class="flex justify-center pt-1">
+            <button type="submit" class="btn-primary rounded-lg py-2.5 px-8 text-sm">Trimite comanda</button>
           </div>
           <p id="comanda-msg" class="text-sm text-center"></p>
         </form>
@@ -3014,9 +3825,6 @@
     </div>`;
         document.body.appendChild(overlay);
 
-        document
-          .getElementById("comanda-cancel")
-          .addEventListener("click", () => overlay.remove());
         document
           .getElementById("comanda-close-x")
           .addEventListener("click", () => overlay.remove());
@@ -3161,7 +3969,9 @@
               agent: agentVal,
               creat_de: currentUser.id,
               status: "in_asteptare",
-              termen_plata: termenPlataVal ? parseInt(termenPlataVal, 10) : null,
+              termen_plata: termenPlataVal
+                ? parseInt(termenPlataVal, 10)
+                : null,
               observatii:
                 document.getElementById("comanda-observatii").value.trim() ||
                 null,
@@ -3205,6 +4015,12 @@
 
             overlay.remove();
             toast(`Comanda ${numarComanda} a fost creată.`);
+            inregistreazaLog(
+              "comanda",
+              comanda.id,
+              "Creare",
+              `Nr. comandă: ${numarComanda}`,
+            );
             onSaved();
           });
       }
@@ -3216,8 +4032,7 @@
           : c.vanzare_directa
             ? "Vânzare directă"
             : "—";
-        const status =
-          c.status === "anulata" ? "anulata" : computeComandaStatus(lines);
+        const status = c.status || "in_asteptare";
         return `
   <div class="bg-white rounded-xl border p-2 flex items-center justify-between gap-3 flex-wrap" style="border-color:var(--line)">
     <div>
@@ -3389,6 +4204,13 @@
                 .eq("id", l.id);
               l.produs_id = produs.id;
               l.status_linie = "asignat";
+              inregistreazaLog(
+                "comanda",
+                l.comanda_id,
+                "Asignare produs existent",
+                `ID produs: ${produs.id_produs}`,
+              );
+              if (lines) syncComandaStatus(l.comanda_id, lines);
               paintLines();
             });
           });
@@ -3407,6 +4229,13 @@
                 l.produs_id = produsNou.id;
                 l.status_linie = "asignat";
                 context.produse.push(produsNou);
+                inregistreazaLog(
+                  "comanda",
+                  l.comanda_id,
+                  "Asignare produs nou",
+                  `ID produs: ${produsNou.id_produs}`,
+                );
+                if (lines) syncComandaStatus(l.comanda_id, lines);
                 paintLines();
               },
               { categorie: l.categorie, marca: l.marca, culoare: l.culoare },
@@ -3425,8 +4254,18 @@
               .from("comanda_produse")
               .update({ produs_id: null, status_linie: "neasignat" })
               .eq("id", l.id);
+            const produsDeslegat = context.produse.find(
+              (p) => p.id === l.produs_id,
+            );
+            inregistreazaLog(
+              "comanda",
+              l.comanda_id,
+              "Deslegare produs din linie",
+              produsDeslegat ? `ID produs: ${produsDeslegat.id_produs}` : null,
+            );
             l.produs_id = null;
             l.status_linie = "neasignat";
+            if (lines) syncComandaStatus(l.comanda_id, lines);
             paintLines();
           });
         }
@@ -3443,6 +4282,9 @@
               context.magazine || [],
               () => paintLines(),
               context.marci || [],
+              undefined,
+              null,
+              false,
             );
           });
         }
@@ -3454,8 +4296,15 @@
             );
             if (!ok) return;
             await supa.from("comanda_produse").delete().eq("id", l.id);
+            inregistreazaLog(
+              "comanda",
+              l.comanda_id,
+              "Ștergere linie din comandă",
+              `${l.categorie || "—"}${l.marca ? " · " + l.marca : ""}${l.culoare ? " · " + l.culoare : ""}`,
+            );
             const idx = lines.findIndex((x) => x.id === l.id);
             if (idx >= 0) lines.splice(idx, 1);
+            syncComandaStatus(l.comanda_id, lines);
             paintLines();
           });
         }
@@ -3484,7 +4333,10 @@
         overlay.innerHTML = `
     <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-3xl fade-in my-auto">
       <div class="flex items-start justify-between mb-1">
-        <h2 class="text-lg font-bold">${esc(c.numar_comanda)}</h2>
+        <div class="flex items-center gap-2">
+          <h2 class="text-lg font-bold">${esc(c.numar_comanda)}</h2>
+          ${isStockManager ? logButtonHtml("comanda-detail-log-btn") : ""}
+        </div>
         <button id="comanda-detail-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
       </div>
       <p class="text-sm text-slate-500 mb-1">Magazin: <strong>${esc(magazinLabel)}</strong> · Agent: ${esc(c.agent || "—")}</p>
@@ -3501,7 +4353,8 @@
       ${
         isStockManager
           ? `<div class="flex gap-2 pt-2 border-t flex-wrap" style="border-color:var(--line)">
-        <button id="comanda-anuleaza" class="rounded-lg py-2.5 px-4 text-sm font-medium border text-red-600" style="border-color:var(--line)">Anulează comanda</button>
+        <button id="comanda-trimite" class="btn-primary rounded-lg py-2.5 px-5 text-sm">Trimite produsele pregătite</button>
+        <button id="comanda-anuleaza" class="ml-auto rounded-lg py-2.5 px-4 text-sm font-medium border text-red-600" style="border-color:var(--line)">Anulează comanda</button>
         ${
           currentProfile.role === "superadmin"
             ? `<button id="comanda-sterge" class="rounded-lg py-2.5 px-4 text-sm font-medium border text-red-700" style="border-color:var(--line)">Șterge definitiv</button>`
@@ -3509,7 +4362,6 @@
               ? `<button disabled class="rounded-lg py-2.5 px-4 text-sm font-medium border text-slate-400" style="border-color:var(--line)">Ștergere solicitată</button>`
               : `<button id="comanda-cere-stergere" class="rounded-lg py-2.5 px-4 text-sm font-medium border text-red-600" style="border-color:var(--line)">Solicită ștergere</button>`
         }
-        <button id="comanda-trimite" class="ml-auto btn-primary rounded-lg py-2.5 px-5 text-sm">Trimite produsele pregătite</button>
       </div>`
           : ""
       }
@@ -3517,7 +4369,10 @@
       ${
         isStockManager
           ? `<div class="mt-4 pt-3 border-t" style="border-color:var(--line)">
-        <p class="text-xs font-semibold text-slate-500 mb-2">Achitare</p>
+        <button type="button" id="comanda-achitare-toggle" class="flex items-center gap-1 text-xs font-semibold text-slate-500 mb-2">
+          <span id="comanda-achitare-toggle-icon">+</span> Achitare
+        </button>
+        <div id="comanda-achitare-body" class="hidden">
         <div class="flex flex-wrap items-center gap-2 mb-2">
           <button type="button" data-plata="integral" class="plata-btn rounded-md px-3 py-1.5 text-xs font-medium border ${c.stadiu_plata === "integral" ? "btn-primary" : ""}" style="border-color:var(--line)">Achitat integral</button>
           <button type="button" data-plata="partial" class="plata-btn rounded-md px-3 py-1.5 text-xs font-medium border ${c.stadiu_plata === "partial" ? "btn-primary" : ""}" style="border-color:var(--line)">Achitat parțial</button>
@@ -3532,6 +4387,7 @@
         </div>
         <button type="button" id="comanda-salveaza-plata" class="btn-primary rounded-lg py-2 px-4 text-sm">Salvează achitarea</button>
         <p id="comanda-plata-msg" class="text-xs mt-1"></p>
+        </div>
       </div>`
           : ""
       }
@@ -3544,6 +4400,29 @@
         overlay.addEventListener("click", (e) => {
           if (e.target === overlay) overlay.remove();
         });
+
+        const comandaDetailLogBtn = document.getElementById(
+          "comanda-detail-log-btn",
+        );
+        if (comandaDetailLogBtn) {
+          comandaDetailLogBtn.addEventListener("click", () => {
+            renderLogModal("comanda", c.id, c.numar_comanda);
+          });
+        }
+
+        const achitareToggleBtn = document.getElementById(
+          "comanda-achitare-toggle",
+        );
+        if (achitareToggleBtn) {
+          achitareToggleBtn.addEventListener("click", () => {
+            const body = document.getElementById("comanda-achitare-body");
+            const icon = document.getElementById(
+              "comanda-achitare-toggle-icon",
+            );
+            const isHidden = body.classList.toggle("hidden");
+            icon.textContent = isHidden ? "+" : "-";
+          });
+        }
 
         const linesEl = document.getElementById("comanda-lines-detail");
         const addProdusWrap = document.getElementById(
@@ -3595,6 +4474,13 @@
                   return;
                 }
                 lines.push(linieNoua);
+                inregistreazaLog(
+                  "comanda",
+                  c.id,
+                  "Adăugare produs în comandă",
+                  `${lineData.categorie || "—"}${lineData.marca ? " · " + lineData.marca : ""}${lineData.culoare ? " · " + lineData.culoare : ""} (cant. ${lineData.cantitate})`,
+                );
+                syncComandaStatus(c.id, lines);
                 paintLines();
               },
             );
@@ -3652,6 +4538,12 @@
               .eq("id", c.id);
 
             toast("Produsele pregătite au fost trimise către magazin.");
+            inregistreazaLog(
+              "comanda",
+              c.id,
+              "Trimitere produse către magazin",
+              `${readyLines.length} produs${readyLines.length === 1 ? "" : "e"} trimis${readyLines.length === 1 ? "" : "e"}`,
+            );
             overlay.remove();
             onSaved();
           });
@@ -3669,6 +4561,7 @@
               })
               .eq("id", c.id);
             toast("Comanda a fost anulată.");
+            inregistreazaLog("comanda", c.id, "Anulare comandă");
             overlay.remove();
             onSaved();
           });
@@ -3684,6 +4577,12 @@
               "Confirmă din nou: comanda și toate liniile ei vor fi șterse definitiv.",
             );
             if (!ok2) return;
+            inregistreazaLog(
+              "comanda",
+              c.id,
+              "Ștergere definitivă",
+              `Nr. comandă: ${c.numar_comanda}`,
+            );
             await supa.from("comanda_produse").delete().eq("comanda_id", c.id);
             await supa.from("comenzi").delete().eq("id", c.id);
             toast("Comanda a fost ștearsă definitiv.");
@@ -3710,6 +4609,7 @@
               })
               .eq("id", c.id);
             toast("Solicitarea de ștergere a fost trimisă spre aprobare.");
+            inregistreazaLog("comanda", c.id, "Solicitare ștergere comandă");
             overlay.remove();
             onSaved();
           });
@@ -3745,9 +4645,7 @@
                 "Alege stadiul achitării (integral sau parțial).";
               return;
             }
-            const sumaInput = document.getElementById(
-              "comanda-suma-achitata",
-            );
+            const sumaInput = document.getElementById("comanda-suma-achitata");
             const sumaVal =
               sumaInput && sumaInput.value.trim() !== ""
                 ? parseFloat(sumaInput.value)
@@ -3783,6 +4681,15 @@
               return;
             }
             toast("Informațiile de achitare au fost salvate.");
+            inregistreazaLog(
+              "comanda",
+              c.id,
+              "Actualizare achitare",
+              plataStadiuLabel({
+                stadiu_plata: stadiuPlataSelectat,
+                suma_achitata: sumaVal,
+              }),
+            );
             overlay.remove();
             onSaved();
           });
@@ -3859,8 +4766,7 @@
           : c.vanzare_directa
             ? "Vânzare directă"
             : "—";
-        const status =
-          c.status === "anulata" ? "anulata" : computeComandaStatus(lines);
+        const status = c.status || "in_asteptare";
 
         overlay.innerHTML = `
     <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg fade-in my-auto">
@@ -3899,32 +4805,52 @@
 
       async function renderComenziAdmin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
+        const pageKey = currentTabKey;
+        const { from, to } = rangeFor(pageKey);
 
         let comenziQuery = supa
           .from("comenzi")
-          .select("*")
-          .order("created_at", { ascending: false });
+          .select("*", { count: "exact" })
+          .order("created_at", { ascending: false })
+          .range(from, to);
         const orFilterAdmin = buildSearchOrFilter(
           tabSearchTerms[currentTabKey] || "",
           ["numar_comanda"],
         );
         if (orFilterAdmin) comenziQuery = comenziQuery.or(orFilterAdmin);
+        if (comenziStatusFilter.length)
+          comenziQuery = comenziQuery.in("status", comenziStatusFilter);
 
         const [
-          { data: comenzi, error: comErr },
-          { data: linii, error: liniiErr },
+          { data: comenzi, error: comErr, count },
           { data: profiles, error: profErr },
-          { data: produse, error: prodErr },
+          stocCtx,
         ] = await Promise.all([
           comenziQuery,
-          supa.from("comanda_produse").select("*"),
-          supa.from("profiles").select("*"),
-          supa.from("produse").select("*"),
+          getCached("profiles"),
+          loadStocDisponibilPentruComenzi(),
         ]);
+        if (isStaleRender(myGen)) return;
 
-        if (comErr || liniiErr || profErr || prodErr) {
-          const e = comErr || liniiErr || profErr || prodErr;
+        if (comErr || profErr) {
+          const e = comErr || profErr;
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare la încărcare: ${esc(e.message)}</div>`;
+          return;
+        }
+
+        actualizeazaBadgeComenziNoi();
+
+        const comenziIds = (comenzi || []).map((c) => c.id);
+        const { data: linii, error: liniiErr } = comenziIds.length
+          ? await supa
+              .from("comanda_produse")
+              .select("*")
+              .in("comanda_id", comenziIds)
+          : { data: [] };
+        if (isStaleRender(myGen)) return;
+        if (liniiErr) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare la încărcare: ${esc(liniiErr.message)}</div>`;
           return;
         }
 
@@ -3933,20 +4859,22 @@
         const context = {
           magazine,
           agenti,
-          allLinii: linii || [],
-          produse: produse || [],
-          marci: distinctMarci([...(produse || []), ...(linii || [])]),
-          marcaCategorieMap: buildMarcaCategorieMap(produse || []),
+          allLinii: stocCtx.allLinii,
+          produse: stocCtx.produse,
+          marci: distinctMarci([...stocCtx.produse, ...stocCtx.allLinii]),
+          marcaCategorieMap: buildMarcaCategorieMap(stocCtx.produse),
         };
 
+        const totalCount = count || 0;
         container.innerHTML = `
     <div class="comenzi-shell" id="comenzi-shell">
     <div class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
-      <p class="text-sm text-slate-500">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"}</p>
+      <p class="text-sm text-slate-500">${totalCount} ${totalCount === 1 ? "comandă" : "comenzi"}</p>
       <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Comandă nouă</button>
     </div>
     <div class="shrink-0">${statusFilterChipsHtml(comenziStatusFilter)}</div>
     <div class="space-y-1.5 comenzi-list-flex" id="comenzi-list"></div>
+    ${paginationBarHtml(pageKey, totalCount)}
     </div>`;
 
         ajusteazaInaltimeComenzi("comenzi-shell");
@@ -3956,17 +4884,15 @@
         comenziResizeHandler = () => ajusteazaInaltimeComenzi("comenzi-shell");
         window.addEventListener("resize", comenziResizeHandler);
 
-        bindStatusFilterChips(container, () => renderComenziAdmin(container));
+        const refresh = () => renderComenziAdmin(container);
+        bindStatusFilterChips(container, refresh);
+        bindPaginationBar(container, pageKey, refresh);
 
-        const comenziFiltrate = filtreazaComenziDupaStatus(
-          comenzi || [],
-          linii || [],
-        );
         const list = document.getElementById("comenzi-list");
-        if (!comenziFiltrate.length) {
+        if (!(comenzi || []).length) {
           list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă găsită.</p></div>`;
         } else {
-          list.innerHTML = comenziFiltrate
+          list.innerHTML = (comenzi || [])
             .map((c) =>
               comandaCard(
                 c,
@@ -3975,15 +4901,17 @@
               ),
             )
             .join("");
-          comenziFiltrate.forEach((c) => {
+          (comenzi || []).forEach((c) => {
             document
               .querySelector(`[data-open-comanda="${c.id}"]`)
               .addEventListener("click", () => {
+                marcheazaComandaVazuta(c.id);
+                actualizeazaBadgeComenziNoi();
                 renderComandaDetailModal(
                   c,
                   (linii || []).filter((l) => l.comanda_id === c.id),
                   context,
-                  () => renderComenziAdmin(container),
+                  refresh,
                 );
               });
           });
@@ -4002,20 +4930,22 @@
                 produse: context.produse,
                 allLinii: context.allLinii,
               },
-              () => renderComenziAdmin(container),
+              refresh,
             );
           });
       }
 
       async function renderComenziAgent(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
+        const pageKey = currentTabKey;
+        const { from, to } = rangeFor(pageKey);
 
         const [
           { data: asocieri, error: asoErr },
-          { data: comenzi, error: comErr },
-          { data: linii, error: liniiErr },
+          { data: comenzi, error: comErr, count },
           { data: profiles, error: profErr },
-          { data: produse },
+          stocCtx,
         ] = await Promise.all([
           supa
             .from("agent_magazine")
@@ -4024,28 +4954,46 @@
           (() => {
             let q = supa
               .from("comenzi")
-              .select("*")
+              .select("*", { count: "exact" })
               .eq("creat_de", currentUser.id)
-              .order("created_at", { ascending: false });
+              .order("created_at", { ascending: false })
+              .range(from, to);
             const orFilter = buildSearchOrFilter(
               tabSearchTerms[currentTabKey] || "",
               ["numar_comanda"],
             );
-            return orFilter ? q.or(orFilter) : q;
+            if (orFilter) q = q.or(orFilter);
+            if (comenziStatusFilter.length)
+              q = q.in("status", comenziStatusFilter);
+            return q;
           })(),
-          supa.from("comanda_produse").select("*"),
-          supa.from("profiles").select("*"),
-          supa.from("produse").select("*"),
+          getCached("profiles"),
+          loadStocDisponibilPentruComenzi(),
         ]);
+        if (isStaleRender(myGen)) return;
 
-        if (asoErr || comErr || liniiErr || profErr) {
-          const e = asoErr || comErr || liniiErr || profErr;
+        if (asoErr || comErr || profErr) {
+          const e = asoErr || comErr || profErr;
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare la încărcare: ${esc(e.message)}</div>`;
           return;
         }
 
-        const marci = distinctMarci([...(produse || []), ...(linii || [])]);
-        const marcaCategorieMap = buildMarcaCategorieMap(produse || []);
+        const myComenzi = comenzi || [];
+        const myComenziIds = myComenzi.map((c) => c.id);
+        const { data: myLinii, error: liniiErr } = myComenziIds.length
+          ? await supa
+              .from("comanda_produse")
+              .select("*")
+              .in("comanda_id", myComenziIds)
+          : { data: [] };
+        if (isStaleRender(myGen)) return;
+        if (liniiErr) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare la încărcare: ${esc(liniiErr.message)}</div>`;
+          return;
+        }
+
+        const marci = distinctMarci([...stocCtx.produse, ...stocCtx.allLinii]);
+        const marcaCategorieMap = buildMarcaCategorieMap(stocCtx.produse);
 
         const magazinIds = (asocieri || []).map((a) => a.magazin_id);
         const magazineAsignate = (profiles || []).filter((p) =>
@@ -4054,20 +5002,17 @@
         const magazineToate = (profiles || []).filter(
           (p) => p.role === "magazin",
         );
-        const myComenzi = comenzi || [];
-        const myComenziIds = new Set(myComenzi.map((c) => c.id));
-        const myLinii = (linii || []).filter((l) =>
-          myComenziIds.has(l.comanda_id),
-        );
 
+        const totalCount = count || 0;
         container.innerHTML = `
     <div class="comenzi-shell" id="comenzi-shell">
     <div class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
-      <p class="text-sm text-slate-500">${myComenzi.length} ${myComenzi.length === 1 ? "comandă" : "comenzi"} create de tine</p>
+      <p class="text-sm text-slate-500">${totalCount} ${totalCount === 1 ? "comandă" : "comenzi"} create de tine</p>
       <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm" ${magazineAsignate.length ? "" : 'disabled title="Nu ai niciun magazin alocat"'}>+ Comandă nouă</button>
     </div>
     <div class="shrink-0">${statusFilterChipsHtml(comenziStatusFilter)}</div>
     <div class="space-y-1.5 comenzi-list-flex" id="comenzi-list"></div>
+    ${paginationBarHtml(pageKey, totalCount)}
     </div>`;
 
         ajusteazaInaltimeComenzi("comenzi-shell");
@@ -4077,42 +5022,40 @@
         comenziResizeHandler = () => ajusteazaInaltimeComenzi("comenzi-shell");
         window.addEventListener("resize", comenziResizeHandler);
 
-        bindStatusFilterChips(container, () => renderComenziAgent(container));
+        const refresh = () => renderComenziAgent(container);
+        bindStatusFilterChips(container, refresh);
+        bindPaginationBar(container, pageKey, refresh);
 
-        const myComenziFiltrate = filtreazaComenziDupaStatus(
-          myComenzi,
-          myLinii,
-        );
         const agentContext = {
           magazine: magazineToate,
           agenti: [],
-          allLinii: linii || [],
-          produse: produse || [],
+          allLinii: stocCtx.allLinii,
+          produse: stocCtx.produse,
           marci,
           marcaCategorieMap,
         };
         const list = document.getElementById("comenzi-list");
-        if (!myComenziFiltrate.length) {
+        if (!myComenzi.length) {
           list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă găsită.</p></div>`;
         } else {
-          list.innerHTML = myComenziFiltrate
+          list.innerHTML = myComenzi
             .map((c) =>
               comandaCard(
                 c,
-                myLinii.filter((l) => l.comanda_id === c.id),
+                (myLinii || []).filter((l) => l.comanda_id === c.id),
                 magazineToate,
               ),
             )
             .join("");
-          myComenziFiltrate.forEach((c) => {
+          myComenzi.forEach((c) => {
             document
               .querySelector(`[data-open-comanda="${c.id}"]`)
               .addEventListener("click", () => {
                 renderComandaDetailModal(
                   c,
-                  myLinii.filter((l) => l.comanda_id === c.id),
+                  (myLinii || []).filter((l) => l.comanda_id === c.id),
                   agentContext,
-                  () => renderComenziAgent(container),
+                  refresh,
                 );
               });
           });
@@ -4128,62 +5071,77 @@
                 magazineAsignate,
                 marci,
                 marcaCategorieMap,
-                produse: produse || [],
-                allLinii: linii || [],
+                produse: stocCtx.produse,
+                allLinii: stocCtx.allLinii,
               },
-              () => renderComenziAgent(container),
+              refresh,
             );
           });
       }
 
       async function renderComenziMagazin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
+        const pageKey = currentTabKey;
+        const { from, to } = rangeFor(pageKey);
 
         const [
-          { data: comenzi, error: comErr },
-          { data: linii, error: liniiErr },
+          { data: comenzi, error: comErr, count },
           { data: alocareHub, error: hubErr },
-          { data: produse },
+          stocCtx,
         ] = await Promise.all([
           (() => {
             let q = supa
               .from("comenzi")
-              .select("*")
+              .select("*", { count: "exact" })
               .eq("magazin_id", currentUser.id)
-              .order("created_at", { ascending: false });
+              .order("created_at", { ascending: false })
+              .range(from, to);
             const orFilter = buildSearchOrFilter(
               tabSearchTerms[currentTabKey] || "",
               ["numar_comanda"],
             );
-            return orFilter ? q.or(orFilter) : q;
+            if (orFilter) q = q.or(orFilter);
+            if (comenziStatusFilter.length)
+              q = q.in("status", comenziStatusFilter);
+            return q;
           })(),
-          supa.from("comanda_produse").select("*"),
           supa
             .from("hub_magazine")
             .select("*")
             .eq("magazin_id", currentUser.id),
-          supa.from("produse").select("*"),
+          loadStocDisponibilPentruComenzi(),
         ]);
+        if (isStaleRender(myGen)) return;
 
-        if (comErr || liniiErr || hubErr) {
-          const e = comErr || liniiErr || hubErr;
+        if (comErr || hubErr) {
+          const e = comErr || hubErr;
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(e.message)}</div>`;
           return;
         }
 
+        const comenziIds = (comenzi || []).map((c) => c.id);
+        const { data: myLinii, error: liniiErr } = comenziIds.length
+          ? await supa
+              .from("comanda_produse")
+              .select("*")
+              .in("comanda_id", comenziIds)
+          : { data: [] };
+        if (isStaleRender(myGen)) return;
+        if (liniiErr) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(liniiErr.message)}</div>`;
+          return;
+        }
+
         const esteAlocatUnuiHub = (alocareHub || []).length > 0;
+        const marci = distinctMarci([...stocCtx.produse, ...stocCtx.allLinii]);
+        const marcaCategorieMap = buildMarcaCategorieMap(stocCtx.produse);
 
-        const myComenziIds = new Set((comenzi || []).map((c) => c.id));
-        const myLinii = (linii || []).filter((l) =>
-          myComenziIds.has(l.comanda_id),
-        );
-        const marci = distinctMarci([...(produse || []), ...(linii || [])]);
-        const marcaCategorieMap = buildMarcaCategorieMap(produse || []);
-
+        const totalCount = count || 0;
         container.innerHTML = `
     <div class="comenzi-shell" id="comenzi-shell">
     <div class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
-      <p class="text-sm text-slate-500">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"} pentru magazinul tău</p>
+      <p class="text-sm text-slate-500">${totalCount} ${totalCount === 1 ? "comandă" : "comenzi"} pentru magazinul tău</p>
       ${
         esteAlocatUnuiHub
           ? ""
@@ -4192,6 +5150,7 @@
     </div>
     <div class="shrink-0">${statusFilterChipsHtml(comenziStatusFilter)}</div>
     <div class="space-y-1.5 comenzi-list-flex" id="comenzi-list"></div>
+    ${paginationBarHtml(pageKey, totalCount)}
     </div>`;
 
         ajusteazaInaltimeComenzi("comenzi-shell");
@@ -4201,32 +5160,30 @@
         comenziResizeHandler = () => ajusteazaInaltimeComenzi("comenzi-shell");
         window.addEventListener("resize", comenziResizeHandler);
 
-        bindStatusFilterChips(container, () => renderComenziMagazin(container));
+        const refresh = () => renderComenziMagazin(container);
+        bindStatusFilterChips(container, refresh);
+        bindPaginationBar(container, pageKey, refresh);
 
-        const comenziFiltrate = filtreazaComenziDupaStatus(
-          comenzi || [],
-          myLinii,
-        );
         const list = document.getElementById("comenzi-list");
-        if (!comenziFiltrate.length) {
+        if (!(comenzi || []).length) {
           list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă găsită.</p></div>`;
         } else {
-          list.innerHTML = comenziFiltrate
+          list.innerHTML = (comenzi || [])
             .map((c) =>
               comandaCard(
                 c,
-                myLinii.filter((l) => l.comanda_id === c.id),
+                (myLinii || []).filter((l) => l.comanda_id === c.id),
                 [currentProfile],
               ),
             )
             .join("");
-          comenziFiltrate.forEach((c) => {
+          (comenzi || []).forEach((c) => {
             document
               .querySelector(`[data-open-comanda="${c.id}"]`)
               .addEventListener("click", () => {
                 renderComandaReadonlyModal(
                   c,
-                  myLinii.filter((l) => l.comanda_id === c.id),
+                  (myLinii || []).filter((l) => l.comanda_id === c.id),
                   [currentProfile],
                 );
               });
@@ -4242,10 +5199,10 @@
                 magazineAsignate: [currentProfile],
                 marci,
                 marcaCategorieMap,
-                produse: produse || [],
-                allLinii: linii || [],
+                produse: stocCtx.produse,
+                allLinii: stocCtx.allLinii,
               },
-              () => renderComenziMagazin(container),
+              refresh,
             );
           });
         }
@@ -4253,13 +5210,17 @@
 
       async function renderComenziHub(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
+        const pageKey = currentTabKey;
+        const { from, to } = rangeFor(pageKey);
         const [
           { data: asocieri, error: asoErr },
           { data: profiles, error: profErr },
         ] = await Promise.all([
           supa.from("hub_magazine").select("*").eq("hub_id", currentUser.id),
-          supa.from("profiles").select("*"),
+          getCached("profiles"),
         ]);
+        if (isStaleRender(myGen)) return;
         if (asoErr || profErr) {
           const e = asoErr || profErr;
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(e.message)}</div>`;
@@ -4273,46 +5234,56 @@
           container.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun magazin alocat.</p></div>`;
           return;
         }
-        const [
-          { data: comenzi, error: comErr },
-          { data: linii, error: liniiErr },
-          { data: produse },
-        ] = await Promise.all([
-          (() => {
-            let q = supa
-              .from("comenzi")
-              .select("*")
-              .in("magazin_id", magazinIds)
-              .order("created_at", { ascending: false });
-            const orFilter = buildSearchOrFilter(
-              tabSearchTerms[currentTabKey] || "",
-              ["numar_comanda"],
-            );
-            return orFilter ? q.or(orFilter) : q;
-          })(),
-          supa.from("comanda_produse").select("*"),
-          supa.from("produse").select("*"),
-        ]);
-        if (comErr || liniiErr) {
-          const e = comErr || liniiErr;
-          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(e.message)}</div>`;
+        const [{ data: comenzi, error: comErr, count }, stocCtx] =
+          await Promise.all([
+            (() => {
+              let q = supa
+                .from("comenzi")
+                .select("*", { count: "exact" })
+                .in("magazin_id", magazinIds)
+                .order("created_at", { ascending: false })
+                .range(from, to);
+              const orFilter = buildSearchOrFilter(
+                tabSearchTerms[currentTabKey] || "",
+                ["numar_comanda"],
+              );
+              if (orFilter) q = q.or(orFilter);
+              if (comenziStatusFilter.length)
+                q = q.in("status", comenziStatusFilter);
+              return q;
+            })(),
+            loadStocDisponibilPentruComenzi(),
+          ]);
+        if (isStaleRender(myGen)) return;
+        if (comErr) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(comErr.message)}</div>`;
           return;
         }
-        const myComenziIds = new Set((comenzi || []).map((c) => c.id));
-        const myLinii = (linii || []).filter((l) =>
-          myComenziIds.has(l.comanda_id),
-        );
-        const marci = distinctMarci([...(produse || []), ...(linii || [])]);
-        const marcaCategorieMap = buildMarcaCategorieMap(produse || []);
+        const comenziIds = (comenzi || []).map((c) => c.id);
+        const { data: myLinii, error: liniiErr } = comenziIds.length
+          ? await supa
+              .from("comanda_produse")
+              .select("*")
+              .in("comanda_id", comenziIds)
+          : { data: [] };
+        if (isStaleRender(myGen)) return;
+        if (liniiErr) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(liniiErr.message)}</div>`;
+          return;
+        }
+        const marci = distinctMarci([...stocCtx.produse, ...stocCtx.allLinii]);
+        const marcaCategorieMap = buildMarcaCategorieMap(stocCtx.produse);
 
+        const totalCount = count || 0;
         container.innerHTML = `
     <div class="comenzi-shell" id="comenzi-shell">
     <div class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
-      <p class="text-sm text-slate-500">${(comenzi || []).length} ${(comenzi || []).length === 1 ? "comandă" : "comenzi"} pentru magazinele alocate</p>
+      <p class="text-sm text-slate-500">${totalCount} ${totalCount === 1 ? "comandă" : "comenzi"} pentru magazinele alocate</p>
       <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Comandă nouă</button>
     </div>
     <div class="shrink-0">${statusFilterChipsHtml(comenziStatusFilter)}</div>
     <div class="space-y-1.5 comenzi-list-flex" id="comenzi-list"></div>
+    ${paginationBarHtml(pageKey, totalCount)}
     </div>`;
 
         ajusteazaInaltimeComenzi("comenzi-shell");
@@ -4322,32 +5293,30 @@
         comenziResizeHandler = () => ajusteazaInaltimeComenzi("comenzi-shell");
         window.addEventListener("resize", comenziResizeHandler);
 
-        bindStatusFilterChips(container, () => renderComenziHub(container));
+        const refresh = () => renderComenziHub(container);
+        bindStatusFilterChips(container, refresh);
+        bindPaginationBar(container, pageKey, refresh);
 
-        const comenziFiltrate = filtreazaComenziDupaStatus(
-          comenzi || [],
-          myLinii,
-        );
         const list = document.getElementById("comenzi-list");
-        if (!comenziFiltrate.length) {
+        if (!(comenzi || []).length) {
           list.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nicio comandă găsită.</p></div>`;
         } else {
-          list.innerHTML = comenziFiltrate
+          list.innerHTML = (comenzi || [])
             .map((c) =>
               comandaCard(
                 c,
-                myLinii.filter((l) => l.comanda_id === c.id),
+                (myLinii || []).filter((l) => l.comanda_id === c.id),
                 magazine,
               ),
             )
             .join("");
-          comenziFiltrate.forEach((c) => {
+          (comenzi || []).forEach((c) => {
             document
               .querySelector(`[data-open-comanda="${c.id}"]`)
               .addEventListener("click", () => {
                 renderComandaReadonlyModal(
                   c,
-                  myLinii.filter((l) => l.comanda_id === c.id),
+                  (myLinii || []).filter((l) => l.comanda_id === c.id),
                   magazine,
                 );
               });
@@ -4363,10 +5332,10 @@
                 magazineAsignate: magazine,
                 marci,
                 marcaCategorieMap,
-                produse: produse || [],
-                allLinii: linii || [],
+                produse: stocCtx.produse,
+                allLinii: stocCtx.allLinii,
               },
-              () => renderComenziHub(container),
+              refresh,
             );
           });
       }
@@ -4388,10 +5357,7 @@
         const [
           { data: comenzi, error: comErr },
           { data: profiles, error: profErr },
-        ] = await Promise.all([
-          comenziQuery,
-          supa.from("profiles").select("*"),
-        ]);
+        ] = await Promise.all([comenziQuery, getCached("profiles")]);
 
         if (comErr || profErr) {
           const e = comErr || profErr;
@@ -4441,6 +5407,12 @@
                 `Aprobi ștergerea definitivă a comenzii ${c.numar_comanda}? Această acțiune nu poate fi anulată.`,
               );
               if (!ok) return;
+              inregistreazaLog(
+                "comanda",
+                c.id,
+                "Aprobare ștergere definitivă",
+                `Nr. comandă: ${c.numar_comanda}`,
+              );
               await supa
                 .from("comanda_produse")
                 .delete()
@@ -4461,6 +5433,11 @@
                 })
                 .eq("id", c.id);
               toast("Cererea de ștergere a fost respinsă.");
+              inregistreazaLog(
+                "comanda",
+                c.id,
+                "Respingere cerere de ștergere",
+              );
               renderAprobari(container);
             });
         });
@@ -4468,36 +5445,48 @@
 
       async function renderMagazinStoc(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
+        const pageKey = currentTabKey;
+        const { from, to } = rangeFor(pageKey);
         let produseQuery = supa
           .from("produse")
-          .select("*")
+          .select("*", { count: "exact" })
           .eq("magazin_id", currentUser.id)
           .eq("vandut", false)
-          .order("created_at", { ascending: true });
+          .order("created_at", { ascending: true })
+          .range(from, to);
         const orFilter = buildSearchOrFilter(
           tabSearchTerms[currentTabKey] || "",
           ["id_produs", "agent", "categorie", "marca", "culoare", "vin"],
         );
         if (orFilter) produseQuery = produseQuery.or(orFilter);
         const [
-          { data: produse, error },
+          { data: produse, error, count },
           { data: comenzi, error: comErr },
-          { data: linii, error: liniiErr },
         ] = await Promise.all([
           produseQuery,
           supa.from("comenzi").select("*").eq("magazin_id", currentUser.id),
-          supa.from("comanda_produse").select("*"),
         ]);
-        if (error) {
-          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(error.message)}</div>`;
+        if (isStaleRender(myGen)) return;
+        if (error || comErr) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc((error || comErr).message)}</div>`;
           return;
         }
+        const comenziIds = (comenzi || []).map((c) => c.id);
+        const { data: linii, error: liniiErr } = comenziIds.length
+          ? await supa
+              .from("comanda_produse")
+              .select("*")
+              .in("comanda_id", comenziIds)
+          : { data: [] };
+        if (isStaleRender(myGen)) return;
         const produsComandaMap = buildProdusComandaMap(
           liniiErr ? [] : linii,
           comErr ? [] : comenzi,
         );
+        const totalCount = count || 0;
         container.innerHTML = `
-    <p class="text-sm text-slate-500 mb-4">${(produse || []).length} produs${(produse || []).length === 1 ? "" : "e"} în stocul magazinului tău</p>
+    <p class="text-sm text-slate-500 mb-4">${totalCount} produs${totalCount === 1 ? "" : "e"} în stocul magazinului tău</p>
     <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
       <table class="w-full text-sm min-w-[1100px]">
         <thead>
@@ -4552,7 +5541,8 @@
             .join("")}
         </tbody>
       </table>
-    </div>`;
+    </div>
+    ${paginationBarHtml(pageKey, totalCount)}`;
 
         (produse || []).forEach((p) => {
           const comandaInfo = produsComandaMap.get(p.id);
@@ -4566,11 +5556,123 @@
           });
         });
 
-        bindVanzareButoane(produse || [], () => renderMagazinStoc(container));
+        const refresh = () => renderMagazinStoc(container);
+        bindVanzareButoane(produse || [], refresh);
+        bindPaginationBar(container, pageKey, refresh);
+      }
+
+      function stocMagazinRowHtml(p, i, produsComandaMap) {
+        const comandaInfo = produsComandaMap.get(p.id);
+        return `
+              <tr class="border-b last:border-0" style="border-color:var(--line)">
+                <td class="px-3 py-2 text-slate-400">${i + 1}</td>
+                <td class="px-3 py-2 font-mono text-xs">
+                  <div class="flex flex-col items-start gap-1">
+                    <span>${esc(p.id_produs)}</span>
+                    ${comandaInfo ? `<button type="button" data-open-comanda-produs="${p.id}" class="comanda-produs-link inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 underline decoration-dotted hover:text-[var(--teal-dark)]" title="Deschide comanda inițială">${esc(comandaInfo.numar_comanda)}</button>` : ""}
+                  </div>
+                </td>
+                <td class="px-3 py-2 text-xs">${esc(p.categorie || "—")}</td>
+                <td class="px-3 py-2 text-xs">${esc(p.marca || "—")}</td>
+                <td class="px-3 py-2 text-xs">${esc(p.culoare || "—")}</td>
+                <td class="px-3 py-2 text-xs font-mono">${esc(p.vin || "—")}</td>
+                <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_vanzare)}</td>
+                <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_cu_tva)}</td>
+                <td class="px-3 py-2 text-xs">${p.pret_recomandat !== null && p.pret_recomandat !== undefined ? fmtNum(p.pret_recomandat) : "—"}</td>
+                <td class="px-3 py-2 text-xs">${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</td>
+              </tr>`;
+      }
+
+      function stocMagazinTableHtml(stocMagazin, produsComandaMap) {
+        return `
+          <table class="w-full text-sm min-w-[900px]">
+            <thead>
+              <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
+                <th class="px-3 py-2 font-medium">Nr.</th>
+                <th class="px-3 py-2 font-medium">ID produs</th>
+                <th class="px-3 py-2 font-medium">Categorie</th>
+                <th class="px-3 py-2 font-medium">Marcă</th>
+                <th class="px-3 py-2 font-medium">Culoare</th>
+                <th class="px-3 py-2 font-medium">VIN</th>
+                <th class="px-3 py-2 font-medium">Preț vânzare</th>
+                <th class="px-3 py-2 font-medium">Preț cu TVA</th>
+                <th class="px-3 py-2 font-medium">Preț Recomandat</th>
+                <th class="px-3 py-2 font-medium">C.I.V.</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                stocMagazin.length
+                  ? stocMagazin
+                      .map((p, i) => stocMagazinRowHtml(p, i, produsComandaMap))
+                      .join("")
+                  : `<tr><td colspan="10" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
+              }
+            </tbody>
+          </table>`;
+      }
+
+      function bindStocMagazinComandaLinks(
+        scope,
+        produse,
+        produsComandaMap,
+        linii,
+        profiles,
+      ) {
+        (produse || []).forEach((p) => {
+          const comandaInfo = produsComandaMap.get(p.id);
+          if (!comandaInfo) return;
+          const link = scope.querySelector(
+            `[data-open-comanda-produs="${p.id}"]`,
+          );
+          if (!link) return;
+          link.addEventListener("click", () => {
+            deschideComandaInitiala(comandaInfo, linii || [], profiles || []);
+          });
+        });
+      }
+
+      // Încarcă stocul unui SINGUR magazin, paginat — folosit de panourile
+      // pliabile din "Stoc magazine alocate" (Agent/Hub), care altfel ar
+      // aduce stocul complet al TUTUROR magazinelor alocate dintr-o dată,
+      // chiar dacă majoritatea panourilor rămân pliate.
+      async function loadStocMagazinPagina(magazinId, pageKey, doarNevandute) {
+        const { from, to } = rangeFor(pageKey);
+        let q = supa
+          .from("produse")
+          .select("*", { count: "exact" })
+          .eq("magazin_id", magazinId)
+          .order("created_at", { ascending: true })
+          .range(from, to);
+        if (doarNevandute) q = q.eq("vandut", false);
+        const { data: produse, error, count } = await q;
+        if (error) return { error };
+        const { data: comenzi, error: comErr } = await supa
+          .from("comenzi")
+          .select("*")
+          .eq("magazin_id", magazinId);
+        if (comErr) return { error: comErr };
+        const comenziIds = (comenzi || []).map((c) => c.id);
+        const { data: linii, error: liniiErr } = comenziIds.length
+          ? await supa
+              .from("comanda_produse")
+              .select("*")
+              .in("comanda_id", comenziIds)
+          : { data: [] };
+        if (liniiErr) return { error: liniiErr };
+        const produsComandaMap = buildProdusComandaMap(linii, comenzi);
+        return {
+          error: null,
+          produse: produse || [],
+          count: count || 0,
+          produsComandaMap,
+          linii: linii || [],
+        };
       }
 
       async function renderAgentStoc(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
         const [
           { data: asocieri, error: asoErr },
           { data: profiles, error: profErr },
@@ -4579,8 +5681,9 @@
             .from("agent_magazine")
             .select("*")
             .eq("agent_id", currentUser.id),
-          supa.from("profiles").select("*"),
+          getCached("profiles"),
         ]);
+        if (isStaleRender(myGen)) return;
         if (asoErr || profErr) {
           const e = asoErr || profErr;
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(e.message)}</div>`;
@@ -4594,133 +5697,172 @@
           container.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Nu ai niciun magazin alocat.</p></div>`;
           return;
         }
-        const [
-          { data: produse, error: prodErr },
-          { data: comenzi, error: comErr },
-          { data: linii, error: liniiErr },
-        ] = await Promise.all([
-          (() => {
-            let q = supa
-              .from("produse")
-              .select("*")
-              .in("magazin_id", magazinIds)
-              .order("created_at", { ascending: true });
-            const orFilter = buildSearchOrFilter(
-              tabSearchTerms[currentTabKey] || "",
-              ["id_produs", "categorie", "marca", "culoare", "vin"],
-            );
-            return orFilter ? q.or(orFilter) : q;
-          })(),
-          supa.from("comenzi").select("*").in("magazin_id", magazinIds),
-          supa.from("comanda_produse").select("*"),
-        ]);
-        if (prodErr) {
-          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(prodErr.message)}</div>`;
-          return;
-        }
-        const produsComandaMap = buildProdusComandaMap(
-          liniiErr ? [] : linii,
-          comErr ? [] : comenzi,
-        );
 
-        container.innerHTML = magazine
-          .map((m) => {
-            const stocMagazin = (produse || []).filter(
-              (p) => p.magazin_id === m.id,
-            );
-            const label = `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`;
-            return `
+        const termenCautare = tabSearchTerms[currentTabKey] || "";
+
+        if (termenCautare) {
+          // Mod căutare: rezultatele sunt deja mărginite de termenul căutat,
+          // așa că aducem potrivirile din toate magazinele deodată (ca
+          // înainte), grupate pe magazin, fără paginare per-magazin.
+          const [
+            { data: produse, error: prodErr },
+            { data: comenzi, error: comErr },
+          ] = await Promise.all([
+            (() => {
+              let q = supa
+                .from("produse")
+                .select("*")
+                .in("magazin_id", magazinIds)
+                .order("created_at", { ascending: true });
+              const orFilter = buildSearchOrFilter(termenCautare, [
+                "id_produs",
+                "categorie",
+                "marca",
+                "culoare",
+                "vin",
+              ]);
+              return orFilter ? q.or(orFilter) : q;
+            })(),
+            supa.from("comenzi").select("*").in("magazin_id", magazinIds),
+          ]);
+          if (isStaleRender(myGen)) return;
+          if (prodErr || comErr) {
+            container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc((prodErr || comErr).message)}</div>`;
+            return;
+          }
+          const comenziIds = (comenzi || []).map((c) => c.id);
+          const { data: linii, error: liniiErr } = comenziIds.length
+            ? await supa
+                .from("comanda_produse")
+                .select("*")
+                .in("comanda_id", comenziIds)
+            : { data: [] };
+          if (isStaleRender(myGen)) return;
+          const produsComandaMap = buildProdusComandaMap(
+            liniiErr ? [] : linii,
+            comErr ? [] : comenzi,
+          );
+
+          container.innerHTML = magazine
+            .map((m) => {
+              const stocMagazin = (produse || []).filter(
+                (p) => p.magazin_id === m.id,
+              );
+              const label = `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`;
+              return `
       <div class="mb-6">
         <h3 class="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2 cursor-pointer select-none" data-toggle-stoc="${m.id}">
           <span class="stoc-toggle-icon inline-flex items-center justify-center w-5 h-5 rounded-full border text-xs font-bold leading-none" style="border-color:var(--line)">+</span>
           <span>${esc(label)} <span class="text-slate-400 font-normal">(${stocMagazin.length} produse)</span></span>
         </h3>
         <div class="bg-white rounded-xl border tabel-fix-wrap tabel-fix-wrap-nested hidden" data-stoc-panel="${m.id}" style="border-color:var(--line)">
-          <table class="w-full text-sm min-w-[900px]">
-            <thead>
-              <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
-                <th class="px-3 py-2 font-medium">Nr.</th>
-                <th class="px-3 py-2 font-medium">ID produs</th>
-                <th class="px-3 py-2 font-medium">Categorie</th>
-                <th class="px-3 py-2 font-medium">Marcă</th>
-                <th class="px-3 py-2 font-medium">Culoare</th>
-                <th class="px-3 py-2 font-medium">VIN</th>
-                <th class="px-3 py-2 font-medium">Preț vânzare</th>
-                <th class="px-3 py-2 font-medium">Preț cu TVA</th>
-                <th class="px-3 py-2 font-medium">Preț Recomandat</th>
-                <th class="px-3 py-2 font-medium">C.I.V.</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${
-                stocMagazin.length
-                  ? stocMagazin
-                      .map((p, i) => {
-                        const comandaInfo = produsComandaMap.get(p.id);
-                        return `
-              <tr class="border-b last:border-0" style="border-color:var(--line)">
-                <td class="px-3 py-2 text-slate-400">${i + 1}</td>
-                <td class="px-3 py-2 font-mono text-xs">
-                  <div class="flex flex-col items-start gap-1">
-                    <span>${esc(p.id_produs)}</span>
-                    ${comandaInfo ? `<button type="button" data-open-comanda-produs="${p.id}" class="comanda-produs-link inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 underline decoration-dotted hover:text-[var(--teal-dark)]" title="Deschide comanda inițială">${esc(comandaInfo.numar_comanda)}</button>` : ""}
-                  </div>
-                </td>
-                <td class="px-3 py-2 text-xs">${esc(p.categorie || "—")}</td>
-                <td class="px-3 py-2 text-xs">${esc(p.marca || "—")}</td>
-                <td class="px-3 py-2 text-xs">${esc(p.culoare || "—")}</td>
-                <td class="px-3 py-2 text-xs font-mono">${esc(p.vin || "—")}</td>
-                <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_vanzare)}</td>
-                <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_cu_tva)}</td>
-                <td class="px-3 py-2 text-xs">${p.pret_recomandat !== null && p.pret_recomandat !== undefined ? fmtNum(p.pret_recomandat) : "—"}</td>
-                <td class="px-3 py-2 text-xs">${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</td>
-              </tr>`;
-                      })
-                      .join("")
-                  : `<tr><td colspan="10" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
-              }
-            </tbody>
-          </table>
+          ${stocMagazinTableHtml(stocMagazin, produsComandaMap)}
         </div>
+      </div>`;
+            })
+            .join("");
+
+          bindStocMagazinComandaLinks(
+            container,
+            produse,
+            produsComandaMap,
+            linii,
+            profiles,
+          );
+          container.querySelectorAll("[data-toggle-stoc]").forEach((h) => {
+            h.addEventListener("click", () => {
+              const id = h.dataset.toggleStoc;
+              const panel = container.querySelector(
+                `[data-stoc-panel="${id}"]`,
+              );
+              const icon = h.querySelector(".stoc-toggle-icon");
+              if (!panel) return;
+              const isHidden = panel.classList.toggle("hidden");
+              if (icon) icon.textContent = isHidden ? "+" : "-";
+            });
+          });
+          return;
+        }
+
+        // Mod navigare (fără căutare): doar numărul de produse per magazin —
+        // stocul fiecărui magazin se aduce, paginat, DOAR când panoul e extins.
+        const numaratori = await Promise.all(
+          magazinIds.map((id) =>
+            supa
+              .from("produse")
+              .select("id", { count: "exact", head: true })
+              .eq("magazin_id", id),
+          ),
+        );
+        if (isStaleRender(myGen)) return;
+        const countMap = new Map();
+        magazinIds.forEach((id, idx) => {
+          countMap.set(id, numaratori[idx].count || 0);
+        });
+
+        container.innerHTML = magazine
+          .map((m) => {
+            const label = `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`;
+            return `
+      <div class="mb-6">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2 cursor-pointer select-none" data-toggle-stoc="${m.id}">
+          <span class="stoc-toggle-icon inline-flex items-center justify-center w-5 h-5 rounded-full border text-xs font-bold leading-none" style="border-color:var(--line)">+</span>
+          <span>${esc(label)} <span class="text-slate-400 font-normal">(${countMap.get(m.id) || 0} produse)</span></span>
+        </h3>
+        <div class="bg-white rounded-xl border tabel-fix-wrap tabel-fix-wrap-nested hidden" data-stoc-panel="${m.id}" style="border-color:var(--line)"></div>
       </div>`;
           })
           .join("");
 
-        (produse || []).forEach((p) => {
-          const comandaInfo = produsComandaMap.get(p.id);
-          if (!comandaInfo) return;
-          const link = document.querySelector(
-            `[data-open-comanda-produs="${p.id}"]`,
+        magazine.forEach((m) => {
+          const header = container.querySelector(
+            `[data-toggle-stoc="${m.id}"]`,
           );
-          if (!link) return;
-          link.addEventListener("click", () => {
-            deschideComandaInitiala(comandaInfo, linii || [], profiles || []);
-          });
-        });
+          const panel = container.querySelector(`[data-stoc-panel="${m.id}"]`);
+          const icon = header.querySelector(".stoc-toggle-icon");
+          const pageKey = `${currentTabKey}:${m.id}`;
+          let loaded = false;
 
-        container.querySelectorAll("[data-toggle-stoc]").forEach((h) => {
-          h.addEventListener("click", () => {
-            const id = h.dataset.toggleStoc;
-            const panel = container.querySelector(
-              `[data-stoc-panel="${id}"]`,
+          async function incarcaSiRandeaza() {
+            panel.innerHTML = `<div class="p-4 text-sm text-slate-400">Se încarcă...</div>`;
+            const d = await loadStocMagazinPagina(m.id, pageKey, false);
+            if (d.error) {
+              panel.innerHTML = `<div class="p-4 text-red-600 text-sm">Eroare: ${esc(d.error.message)}</div>`;
+              return;
+            }
+            panel.innerHTML =
+              stocMagazinTableHtml(d.produse, d.produsComandaMap) +
+              paginationBarHtml(pageKey, d.count);
+            bindStocMagazinComandaLinks(
+              panel,
+              d.produse,
+              d.produsComandaMap,
+              d.linii,
+              profiles,
             );
-            const icon = h.querySelector(".stoc-toggle-icon");
-            if (!panel) return;
+            bindPaginationBar(panel, pageKey, incarcaSiRandeaza);
+            loaded = true;
+          }
+
+          header.addEventListener("click", async () => {
             const isHidden = panel.classList.toggle("hidden");
-            if (icon) icon.textContent = isHidden ? "+" : "-";
+            icon.textContent = isHidden ? "+" : "-";
+            if (!isHidden && !loaded) await incarcaSiRandeaza();
           });
         });
       }
 
       async function renderHubStoc(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
         const [
           { data: asocieri, error: asoErr },
           { data: profiles, error: profErr },
         ] = await Promise.all([
           supa.from("hub_magazine").select("*").eq("hub_id", currentUser.id),
-          supa.from("profiles").select("*"),
+          getCached("profiles"),
         ]);
+        if (isStaleRender(myGen)) return;
         if (asoErr || profErr) {
           const e = asoErr || profErr;
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(e.message)}</div>`;
@@ -4734,121 +5876,154 @@
           container.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun magazin alocat.</p></div>`;
           return;
         }
-        const [
-          { data: produse, error: prodErr },
-          { data: comenzi, error: comErr },
-          { data: linii, error: liniiErr },
-        ] = await Promise.all([
-          (() => {
-            let q = supa
-              .from("produse")
-              .select("*")
-              .in("magazin_id", magazinIds)
-              .eq("vandut", false)
-              .order("created_at", { ascending: true });
-            const orFilter = buildSearchOrFilter(
-              tabSearchTerms[currentTabKey] || "",
-              ["id_produs", "categorie", "marca", "culoare", "vin"],
-            );
-            return orFilter ? q.or(orFilter) : q;
-          })(),
-          supa.from("comenzi").select("*").in("magazin_id", magazinIds),
-          supa.from("comanda_produse").select("*"),
-        ]);
-        if (prodErr) {
-          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(prodErr.message)}</div>`;
-          return;
-        }
-        const produsComandaMap = buildProdusComandaMap(
-          liniiErr ? [] : linii,
-          comErr ? [] : comenzi,
-        );
 
-        container.innerHTML = magazine
-          .map((m) => {
-            const stocMagazin = (produse || []).filter(
-              (p) => p.magazin_id === m.id,
-            );
-            const label = `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`;
-            return `
+        const termenCautare = tabSearchTerms[currentTabKey] || "";
+
+        if (termenCautare) {
+          const [
+            { data: produse, error: prodErr },
+            { data: comenzi, error: comErr },
+          ] = await Promise.all([
+            (() => {
+              let q = supa
+                .from("produse")
+                .select("*")
+                .in("magazin_id", magazinIds)
+                .eq("vandut", false)
+                .order("created_at", { ascending: true });
+              const orFilter = buildSearchOrFilter(termenCautare, [
+                "id_produs",
+                "categorie",
+                "marca",
+                "culoare",
+                "vin",
+              ]);
+              return orFilter ? q.or(orFilter) : q;
+            })(),
+            supa.from("comenzi").select("*").in("magazin_id", magazinIds),
+          ]);
+          if (isStaleRender(myGen)) return;
+          if (prodErr || comErr) {
+            container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc((prodErr || comErr).message)}</div>`;
+            return;
+          }
+          const comenziIds = (comenzi || []).map((c) => c.id);
+          const { data: linii, error: liniiErr } = comenziIds.length
+            ? await supa
+                .from("comanda_produse")
+                .select("*")
+                .in("comanda_id", comenziIds)
+            : { data: [] };
+          if (isStaleRender(myGen)) return;
+          const produsComandaMap = buildProdusComandaMap(
+            liniiErr ? [] : linii,
+            comErr ? [] : comenzi,
+          );
+
+          container.innerHTML = magazine
+            .map((m) => {
+              const stocMagazin = (produse || []).filter(
+                (p) => p.magazin_id === m.id,
+              );
+              const label = `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`;
+              return `
       <div class="mb-6">
         <h3 class="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2 cursor-pointer select-none" data-toggle-stoc="${m.id}">
           <span class="stoc-toggle-icon inline-flex items-center justify-center w-5 h-5 rounded-full border text-xs font-bold leading-none" style="border-color:var(--line)">+</span>
           <span>${esc(label)} <span class="text-slate-400 font-normal">(${stocMagazin.length} produse)</span></span>
         </h3>
         <div class="bg-white rounded-xl border tabel-fix-wrap tabel-fix-wrap-nested hidden" data-stoc-panel="${m.id}" style="border-color:var(--line)">
-          <table class="w-full text-sm min-w-[900px]">
-            <thead>
-              <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
-                <th class="px-3 py-2 font-medium">Nr.</th>
-                <th class="px-3 py-2 font-medium">ID produs</th>
-                <th class="px-3 py-2 font-medium">Categorie</th>
-                <th class="px-3 py-2 font-medium">Marcă</th>
-                <th class="px-3 py-2 font-medium">Culoare</th>
-                <th class="px-3 py-2 font-medium">VIN</th>
-                <th class="px-3 py-2 font-medium">Preț vânzare</th>
-                <th class="px-3 py-2 font-medium">Preț cu TVA</th>
-                <th class="px-3 py-2 font-medium">Preț Recomandat</th>
-                <th class="px-3 py-2 font-medium">C.I.V.</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${
-                stocMagazin.length
-                  ? stocMagazin
-                      .map((p, i) => {
-                        const comandaInfo = produsComandaMap.get(p.id);
-                        return `
-              <tr class="border-b last:border-0" style="border-color:var(--line)">
-                <td class="px-3 py-2 text-slate-400">${i + 1}</td>
-                <td class="px-3 py-2 font-mono text-xs">
-                  <div class="flex flex-col items-start gap-1">
-                    <span>${esc(p.id_produs)}</span>
-                    ${comandaInfo ? `<button type="button" data-open-comanda-produs="${p.id}" class="comanda-produs-link inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 underline decoration-dotted hover:text-[var(--teal-dark)]" title="Deschide comanda inițială">${esc(comandaInfo.numar_comanda)}</button>` : ""}
-                  </div>
-                </td>
-                <td class="px-3 py-2 text-xs">${esc(p.categorie || "—")}</td>
-                <td class="px-3 py-2 text-xs">${esc(p.marca || "—")}</td>
-                <td class="px-3 py-2 text-xs">${esc(p.culoare || "—")}</td>
-                <td class="px-3 py-2 text-xs font-mono">${esc(p.vin || "—")}</td>
-                <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_vanzare)}</td>
-                <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_cu_tva)}</td>
-                <td class="px-3 py-2 text-xs">${p.pret_recomandat !== null && p.pret_recomandat !== undefined ? fmtNum(p.pret_recomandat) : "—"}</td>
-                <td class="px-3 py-2 text-xs">${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</td>
-              </tr>`;
-                      })
-                      .join("")
-                  : `<tr><td colspan="10" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
-              }
-            </tbody>
-          </table>
+          ${stocMagazinTableHtml(stocMagazin, produsComandaMap)}
         </div>
+      </div>`;
+            })
+            .join("");
+
+          bindStocMagazinComandaLinks(
+            container,
+            produse,
+            produsComandaMap,
+            linii,
+            profiles,
+          );
+          container.querySelectorAll("[data-toggle-stoc]").forEach((h) => {
+            h.addEventListener("click", () => {
+              const id = h.dataset.toggleStoc;
+              const panel = container.querySelector(
+                `[data-stoc-panel="${id}"]`,
+              );
+              const icon = h.querySelector(".stoc-toggle-icon");
+              if (!panel) return;
+              const isHidden = panel.classList.toggle("hidden");
+              if (icon) icon.textContent = isHidden ? "+" : "-";
+            });
+          });
+          return;
+        }
+
+        const numaratori = await Promise.all(
+          magazinIds.map((id) =>
+            supa
+              .from("produse")
+              .select("id", { count: "exact", head: true })
+              .eq("magazin_id", id)
+              .eq("vandut", false),
+          ),
+        );
+        if (isStaleRender(myGen)) return;
+        const countMap = new Map();
+        magazinIds.forEach((id, idx) => {
+          countMap.set(id, numaratori[idx].count || 0);
+        });
+
+        container.innerHTML = magazine
+          .map((m) => {
+            const label = `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`;
+            return `
+      <div class="mb-6">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2 cursor-pointer select-none" data-toggle-stoc="${m.id}">
+          <span class="stoc-toggle-icon inline-flex items-center justify-center w-5 h-5 rounded-full border text-xs font-bold leading-none" style="border-color:var(--line)">+</span>
+          <span>${esc(label)} <span class="text-slate-400 font-normal">(${countMap.get(m.id) || 0} produse)</span></span>
+        </h3>
+        <div class="bg-white rounded-xl border tabel-fix-wrap tabel-fix-wrap-nested hidden" data-stoc-panel="${m.id}" style="border-color:var(--line)"></div>
       </div>`;
           })
           .join("");
 
-        (produse || []).forEach((p) => {
-          const comandaInfo = produsComandaMap.get(p.id);
-          if (!comandaInfo) return;
-          const link = document.querySelector(
-            `[data-open-comanda-produs="${p.id}"]`,
+        magazine.forEach((m) => {
+          const header = container.querySelector(
+            `[data-toggle-stoc="${m.id}"]`,
           );
-          if (!link) return;
-          link.addEventListener("click", () => {
-            deschideComandaInitiala(comandaInfo, linii || [], profiles || []);
-          });
-        });
+          const panel = container.querySelector(`[data-stoc-panel="${m.id}"]`);
+          const icon = header.querySelector(".stoc-toggle-icon");
+          const pageKey = `${currentTabKey}:${m.id}`;
+          let loaded = false;
 
-        container.querySelectorAll("[data-toggle-stoc]").forEach((h) => {
-          h.addEventListener("click", () => {
-            const id = h.dataset.toggleStoc;
-            const panel = container.querySelector(
-              `[data-stoc-panel="${id}"]`,
+          async function incarcaSiRandeaza() {
+            panel.innerHTML = `<div class="p-4 text-sm text-slate-400">Se încarcă...</div>`;
+            const d = await loadStocMagazinPagina(m.id, pageKey, true);
+            if (d.error) {
+              panel.innerHTML = `<div class="p-4 text-red-600 text-sm">Eroare: ${esc(d.error.message)}</div>`;
+              return;
+            }
+            panel.innerHTML =
+              stocMagazinTableHtml(d.produse, d.produsComandaMap) +
+              paginationBarHtml(pageKey, d.count);
+            bindStocMagazinComandaLinks(
+              panel,
+              d.produse,
+              d.produsComandaMap,
+              d.linii,
+              profiles,
             );
-            const icon = h.querySelector(".stoc-toggle-icon");
-            if (!panel) return;
+            bindPaginationBar(panel, pageKey, incarcaSiRandeaza);
+            loaded = true;
+          }
+
+          header.addEventListener("click", async () => {
             const isHidden = panel.classList.toggle("hidden");
-            if (icon) icon.textContent = isHidden ? "+" : "-";
+            icon.textContent = isHidden ? "+" : "-";
+            if (!isHidden && !loaded) await incarcaSiRandeaza();
           });
         });
       }
@@ -4962,7 +6137,8 @@
           filialaInput.disabled = role !== "magazin";
           const showMag = role === "agent" || role === "magazin_hub";
           if (magBtn) magBtn.classList.toggle("hidden", !showMag);
-          if (magPlaceholder) magPlaceholder.classList.toggle("hidden", showMag);
+          if (magPlaceholder)
+            magPlaceholder.classList.toggle("hidden", showMag);
         });
 
         row.querySelector(".save-btn").addEventListener("click", async () => {
@@ -5047,6 +6223,7 @@
             }
           }
 
+          invalidateCache("profiles", "agent_magazine", "hub_magazine");
           toast("Salvat cu succes.");
           btn.disabled = false;
           btn.textContent = "Salvează";
@@ -5275,6 +6452,7 @@
             const key = btn.dataset.bateriiFiltru;
             if (bateriiFiltruActiv === key) return;
             bateriiFiltruActiv = key;
+            resetPage(currentTabKey);
             onChange();
           });
         });
@@ -5383,6 +6561,9 @@
             const ultima = c.cicluri.length
               ? c.cicluri[c.cicluri.length - 1].data_incarcare
               : null;
+            const areIntarziereIstoric = c.cicluri.some(
+              (cy) => cy.status === "rosu",
+            );
             let magazinLabel = "";
             if (arataMagazin) {
               const m = (magazine || []).find((x) => x.id === p.magazin_id);
@@ -5399,7 +6580,7 @@
             <td class="px-3 py-3">${bateriiStatusBadge(c.statusCurent, c.zileDiff)}</td>
             <td class="px-3 py-3 text-xs text-slate-500">${ultima ? new Date(ultima).toLocaleDateString("ro-RO") : "—"}</td>
             <td class="px-3 py-3 text-right whitespace-nowrap">
-              <button type="button" data-istoric-produs="${p.id}" class="text-xs font-medium text-slate-500 hover:text-[var(--teal-dark)] underline decoration-dotted mr-3">Istoric</button>
+              <button type="button" data-istoric-produs="${p.id}" class="text-xs font-medium ${areIntarziereIstoric ? "text-red-600 font-semibold" : "text-slate-500"} hover:text-[var(--teal-dark)] underline decoration-dotted mr-3" ${areIntarziereIstoric ? 'title="Istoric cu cel puțin o încărcare întârziată"' : ""}>Istoric</button>
               ${permiteIncarcare ? `<button type="button" data-incarca-produs="${p.id}" class="btn-primary rounded-lg px-3 py-1.5 text-xs">Marchează încărcare azi</button>` : ""}
             </td>
           </tr>`;
@@ -5521,6 +6702,12 @@
               return;
             }
             toast("Încărcare înregistrată.");
+            inregistreazaLog(
+              "produs",
+              p.id,
+              "Încărcare baterie",
+              `ID produs: ${p.id_produs}`,
+            );
             renderBateriiMagazin(container);
           },
         );
@@ -5536,7 +6723,7 @@
             .from("agent_magazine")
             .select("*")
             .eq("agent_id", currentUser.id),
-          supa.from("profiles").select("*"),
+          getCached("profiles"),
         ]);
         if (asoErr || profErr) {
           const e = asoErr || profErr;
@@ -5587,7 +6774,11 @@
         bindBateriiRezumatBar(container, () => renderBateriiAgent(container));
         bindBateriiTableEvents(
           container,
-          filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv),
+          filtreazaProduseBaterii(
+            produse || [],
+            incarcari || [],
+            bateriiFiltruActiv,
+          ),
           incarcari || [],
         );
       }
@@ -5599,7 +6790,7 @@
           { data: profiles, error: profErr },
         ] = await Promise.all([
           supa.from("hub_magazine").select("*").eq("hub_id", currentUser.id),
-          supa.from("profiles").select("*"),
+          getCached("profiles"),
         ]);
         if (asoErr || profErr) {
           const e = asoErr || profErr;
@@ -5650,16 +6841,29 @@
         bindBateriiRezumatBar(container, () => renderBateriiHub(container));
         bindBateriiTableEvents(
           container,
-          filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv),
+          filtreazaProduseBaterii(
+            produse || [],
+            incarcari || [],
+            bateriiFiltruActiv,
+          ),
           incarcari || [],
         );
       }
 
       async function renderBateriiAdmin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
+        const pageKey = currentTabKey;
+        // Doar coloanele folosite efectiv la calculul ciclului/afișare —
+        // nu select("*"). Statusul (verde/roșu) e derivat din dată, nu
+        // dintr-o coloană stocată, așa că tot setul de produse nealocate
+        // trebuie citit ca să fie corecte contoarele de sumar — dar la un
+        // cost mult mai mic per rând decât un select("*").
         let bateriiQueryAdmin = supa
           .from("produse")
-          .select("*")
+          .select(
+            "id, id_produs, magazin_id, data_comenzii, categorie, marca, culoare, vin",
+          )
           .not("magazin_id", "is", null)
           .eq("vandut", false)
           .order("created_at", { ascending: true });
@@ -5672,10 +6876,8 @@
         const [
           { data: produse, error: prodErr },
           { data: profiles, error: profErr },
-        ] = await Promise.all([
-          bateriiQueryAdmin,
-          supa.from("profiles").select("*"),
-        ]);
+        ] = await Promise.all([bateriiQueryAdmin, getCached("profiles")]);
+        if (isStaleRender(myGen)) return;
         if (prodErr || profErr) {
           const e = prodErr || profErr;
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(e.message)}</div>`;
@@ -5686,24 +6888,32 @@
         const { data: incarcari, error: incErr } = produsIds.length
           ? await supa
               .from("incarcari_baterie")
-              .select("*")
+              .select("produs_id, data_incarcare")
               .in("produs_id", produsIds)
           : { data: [] };
+        if (isStaleRender(myGen)) return;
         if (incErr) {
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare la încărcarea istoricului: ${esc(incErr.message)}</div>`;
           return;
         }
 
+        const filtrate = filtreazaProduseBaterii(
+          produse || [],
+          incarcari || [],
+          bateriiFiltruActiv,
+        );
+        const { from, to } = rangeFor(pageKey);
+        const pagina = filtrate.slice(from, to + 1);
+
         container.innerHTML = `
     ${bateriiRezumatBar(produse || [], incarcari || [], bateriiFiltruActiv)}
-    ${renderBateriiTable(filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv), incarcari || [], false, true, magazine)}`;
+    ${renderBateriiTable(pagina, incarcari || [], false, true, magazine)}
+    ${paginationBarHtml(pageKey, filtrate.length)}`;
 
-        bindBateriiRezumatBar(container, () => renderBateriiAdmin(container));
-        bindBateriiTableEvents(
-          container,
-          filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv),
-          incarcari || [],
-        );
+        const refresh = () => renderBateriiAdmin(container);
+        bindBateriiRezumatBar(container, refresh);
+        bindPaginationBar(container, pageKey, refresh);
+        bindBateriiTableEvents(container, pagina, incarcari || []);
       }
 
       const BUCKET_VANZARI = "documente-vanzari";
@@ -5767,18 +6977,14 @@
         <div>${fieldLabel("Factură")}<input type="file" id="vanzare-file-factura" required accept="application/pdf,image/*" class="${inputBase()} text-slate-600"></div>
         <div>${fieldLabel("P.V. de predare")}<input type="file" id="vanzare-file-pv" required accept="application/pdf,image/*" class="${inputBase()} text-slate-600"></div>
         <div id="vanzare-garantie-file-wrap" class="hidden">${fieldLabel("Garanție extinsă (document)")}<input type="file" id="vanzare-file-garantie" accept="application/pdf,image/*" class="${inputBase()} text-slate-600"></div>
-        <div class="flex gap-2 pt-1">
-          <button type="button" id="vanzare-produs-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
-          <button type="submit" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Salvează vânzarea</button>
+        <div class="flex justify-center pt-1">
+          <button type="submit" class="btn-primary rounded-lg py-2.5 px-10 text-sm">Salvează vânzarea</button>
         </div>
         <p id="vanzare-produs-msg" class="text-sm text-center"></p>
       </form>
     </div>`;
         document.body.appendChild(overlay);
 
-        document
-          .getElementById("vanzare-produs-cancel")
-          .addEventListener("click", () => overlay.remove());
         document
           .getElementById("vanzare-produs-close")
           .addEventListener("click", () => overlay.remove());
@@ -5874,6 +7080,12 @@
               if (error) throw error;
 
               toast("Produsul a fost marcat ca vândut.");
+              inregistreazaLog(
+                "produs",
+                produs.id,
+                "Vânzare către client final",
+                `ID produs: ${produs.id_produs} · Client: ${document.getElementById("vanzare-client-nume").value}`,
+              );
               overlay.remove();
               if (typeof refresh === "function") refresh();
             } catch (err) {
@@ -6064,7 +7276,7 @@
           { data: profiles, error: profErr },
         ] = await Promise.all([
           supa.from("hub_magazine").select("*").eq("hub_id", currentUser.id),
-          supa.from("profiles").select("*"),
+          getCached("profiles"),
         ]);
         if (asoErr || profErr) {
           const e = asoErr || profErr;
@@ -6126,11 +7338,15 @@
 
       async function renderVanduteAdmin(container) {
         container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
+        const pageKey = currentTabKey;
+        const { from, to } = rangeFor(pageKey);
         let vanduteQueryAdmin = supa
           .from("produse")
-          .select("*")
+          .select("*", { count: "exact" })
           .eq("vandut", true)
-          .order("data_vanzare", { ascending: false });
+          .order("data_vanzare", { ascending: false })
+          .range(from, to);
         const orFilterAdmin2 = buildSearchOrFilter(
           tabSearchTerms[currentTabKey] || "",
           [
@@ -6146,12 +7362,10 @@
         if (orFilterAdmin2)
           vanduteQueryAdmin = vanduteQueryAdmin.or(orFilterAdmin2);
         const [
-          { data: produse, error: prodErr },
+          { data: produse, error: prodErr, count },
           { data: profiles, error: profErr },
-        ] = await Promise.all([
-          vanduteQueryAdmin,
-          supa.from("profiles").select("*"),
-        ]);
+        ] = await Promise.all([vanduteQueryAdmin, getCached("profiles")]);
+        if (isStaleRender(myGen)) return;
         if (prodErr || profErr) {
           const e = prodErr || profErr;
           container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(e.message)}</div>`;
@@ -6172,12 +7386,17 @@
               .select("*")
               .in("produs_id", produsIdsV)
           : { data: [] };
+        const totalCount = count || 0;
         container.innerHTML = `
-    <p class="text-sm text-slate-500 mb-4">${(produse || []).length} produs${(produse || []).length === 1 ? "" : "e"} vândut${(produse || []).length === 1 ? "" : "e"} în total</p>
-    ${vanzariTableHtml(produse || [], magazinLabelFn, incarcariV || [])}`;
+    <p class="text-sm text-slate-500 mb-4">${totalCount} produs${totalCount === 1 ? "" : "e"} vândut${totalCount === 1 ? "" : "e"} în total</p>
+    ${vanzariTableHtml(produse || [], magazinLabelFn, incarcariV || [])}
+    ${paginationBarHtml(pageKey, totalCount)}`;
         bindDeschideDocumenteVanzare(container);
         bindIstoricBaterieVanzare(container, produse || [], incarcariV || []);
         bindAdresaToggle(container);
+        bindPaginationBar(container, pageKey, () =>
+          renderVanduteAdmin(container),
+        );
       }
 
       let statisticiState = null;
@@ -6467,11 +7686,10 @@
           <tr class="border-b last:border-0" style="border-color:var(--line)">
             <td class="px-3 py-3 text-slate-400">${i + 1}</td>
             ${coloane
-              .map(
-                (c) =>
-                  c.key === "numar_comanda"
-                    ? `<td class="px-3 py-3 text-xs whitespace-nowrap"><button type="button" class="stat-comanda-link underline decoration-dotted hover:text-[var(--teal-dark)] font-semibold" data-stat-comanda-id="${esc(r.id)}">${esc(getValoare(r, c.key))}</button></td>`
-                    : `<td class="px-3 py-3 text-xs whitespace-nowrap">${esc(getValoare(r, c.key))}</td>`,
+              .map((c) =>
+                c.key === "numar_comanda"
+                  ? `<td class="px-3 py-3 text-xs whitespace-nowrap"><button type="button" class="stat-comanda-link underline decoration-dotted hover:text-[var(--teal-dark)] font-semibold" data-stat-comanda-id="${esc(r.id)}">${esc(getValoare(r, c.key))}</button></td>`
+                  : `<td class="px-3 py-3 text-xs whitespace-nowrap">${esc(getValoare(r, c.key))}</td>`,
               )
               .join("")}
           </tr>`,
@@ -6570,7 +7788,7 @@
           currentProfile.role === "admin" ||
           currentProfile.role === "superadmin";
         const scope = await scopStatisticiRol();
-        const { data: profiles } = await supa.from("profiles").select("*");
+        const { data: profiles } = await getCached("profiles");
         const toateMagazinele = (profiles || []).filter(
           (p) => p.role === "magazin",
         );
@@ -7079,9 +8297,7 @@
           if (garantieSel) state.garantieExtinsa = garantieSel.value;
           const civSel = document.getElementById("stat-civ");
           if (civSel) state.civ = civSel.value;
-          const termenPlataInput = document.getElementById(
-            "stat-termen-plata",
-          );
+          const termenPlataInput = document.getElementById("stat-termen-plata");
           if (termenPlataInput)
             state.termenPlata = termenPlataInput.value.trim();
           const stadiuPlataSel = document.getElementById("stat-stadiu-plata");
