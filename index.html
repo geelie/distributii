@@ -1207,7 +1207,7 @@
                   .eq("vandut", false),
                 supa
                   .from("produse")
-                  .select("pret_vanzare")
+                  .select("id")
                   .eq("magazin_id", currentUser.id)
                   .eq("vandut", true)
                   .gte("data_vanzare", start)
@@ -1224,10 +1224,6 @@
                   .eq("vandut", false),
               ]);
             const vandute = vanduteRes.data || [];
-            const valoareVandute = vandute.reduce(
-              (s, p) => s + (Number(p.pret_vanzare) || 0),
-              0,
-            );
             const produseBaterii = produseBateriiRes.data || [];
             const idsBaterii = produseBaterii.map((p) => p.id);
             const incarcariRes = idsBaterii.length
@@ -1240,7 +1236,7 @@
 
             cardsHtml = `
         ${acasaCard({ label: "Stoc curent", value: stocRes.count ?? 0, tabKey: "stoc" })}
-        ${acasaCard({ label: "Vândute luna aceasta", value: vandute.length, sub: `${fmtNum(valoareVandute)} lei`, colorClass: "text-emerald-600", tabKey: "vandute" })}
+        ${acasaCard({ label: "Vândute luna aceasta", value: `${vandute.length} buc.`, colorClass: "text-emerald-600", tabKey: "vandute" })}
         ${acasaCard({ label: "Comenzi active", value: comenziRes.count ?? 0, tabKey: "comenzi" })}
         ${acasaCard({ label: "Baterii depășite", value: rez.depasite, colorClass: rez.depasite ? "text-red-600" : "text-slate-800", tabKey: "baterii" })}`;
           } else if (currentProfile.role === "magazin_hub") {
@@ -1267,7 +1263,7 @@
                   .eq("vandut", false),
                 supa
                   .from("produse")
-                  .select("pret_vanzare,magazin_id")
+                  .select("id,magazin_id")
                   .in("magazin_id", magazinIds)
                   .eq("vandut", true)
                   .gte("data_vanzare", start)
@@ -1285,10 +1281,6 @@
                 getCached("profiles"),
               ]);
               const vandute = vanduteRes.data || [];
-              const valoareVandute = vandute.reduce(
-                (s, p) => s + (Number(p.pret_vanzare) || 0),
-                0,
-              );
               const produseBaterii = produseBateriiRes.data || [];
               const idsBaterii = produseBaterii.map((p) => p.id);
               const incarcariRes = idsBaterii.length
@@ -1318,7 +1310,7 @@
 
               cardsHtml = `
         ${acasaCard({ label: "Stoc total magazine", value: stocRes.count ?? 0, tabKey: "stoc" })}
-        ${acasaCard({ label: "Vândute luna aceasta", value: vandute.length, sub: `${fmtNum(valoareVandute)} lei`, colorClass: "text-emerald-600", tabKey: "vandute" })}
+        ${acasaCard({ label: "Vândute luna aceasta", value: `${vandute.length} buc.`, colorClass: "text-emerald-600", tabKey: "vandute" })}
         ${acasaCard({ label: "Comenzi active", value: comenziRes.count ?? 0, tabKey: "comenzi" })}
         ${acasaCard({ label: "Baterii depășite", value: rez.depasite, colorClass: rez.depasite ? "text-red-600" : "text-slate-800", tabKey: "baterii" })}
         <div class="bg-white rounded-xl border p-4 fade-in" style="border-color:var(--line)">
@@ -1349,7 +1341,7 @@
                   : Promise.resolve({ count: 0 }),
                 supa
                   .from("produse")
-                  .select("pret_vanzare")
+                  .select("pret_cu_tva")
                   .eq("vandut_de", currentUser.id)
                   .eq("vandut", true)
                   .gte("data_vanzare", start)
@@ -1362,7 +1354,7 @@
               ]);
             const vandute = vanduteRes.data || [];
             const valoareVandute = vandute.reduce(
-              (s, p) => s + (Number(p.pret_vanzare) || 0),
+              (s, p) => s + (Number(p.pret_cu_tva) || 0),
               0,
             );
 
@@ -1397,14 +1389,14 @@
                   .in("status", ["in_asteptare", "partial_onorata"]),
                 supa
                   .from("produse")
-                  .select("pret_vanzare")
+                  .select("pret_cu_tva")
                   .eq("vandut", true)
                   .gte("data_vanzare", start)
                   .lt("data_vanzare", end),
               ]);
             const vandute = vanduteRes.data || [];
             const valoareVandute = vandute.reduce(
-              (s, p) => s + (Number(p.pret_vanzare) || 0),
+              (s, p) => s + (Number(p.pret_cu_tva) || 0),
               0,
             );
 
