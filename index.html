@@ -7,7 +7,7 @@
     <link
       rel="icon"
       type="image/png"
-      href="https://i.ibb.co/Lq8VVBn/20260727-204249.png"
+      href="https://i.ibb.co/0ySpJdXV/20260805-165359.png"
     />
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -465,7 +465,7 @@
       function logButtonHtml(id) {
         return `<button type="button" id="${id}" class="rounded-md px-2 py-0.5 text-[10px] font-semibold border text-slate-500 hover:bg-slate-50 hover:text-slate-700" style="border-color:var(--line)" title="Jurnal acțiuni">LOG</button>`;
       }
-      async function renderLogModal(tipEntitate, entitateId, titlu) {
+      async function renderLogModal(tipEntitate, entitateId, titlu, onVazut) {
         const overlay = document.createElement("div");
         overlay.id = "log-actiuni-overlay";
         overlay.className =
@@ -502,6 +502,10 @@
         if (error) {
           listEl.innerHTML = `<p class="text-sm text-red-600 text-center py-4">Eroare la încărcarea jurnalului: ${esc(error.message)}</p>`;
           return;
+        }
+        if (tipEntitate === "produs") {
+          await marcheazaNotificariProdusVazute(entitateId);
+          if (typeof onVazut === "function") onVazut();
         }
         if (!data || !data.length) {
           listEl.innerHTML = `<p class="text-sm text-slate-400 text-center py-4">Niciun eveniment înregistrat încă.</p>`;
@@ -650,7 +654,7 @@
   <div class="min-h-screen flex items-center justify-center px-4" style="background:radial-gradient(circle at 20% 20%, #1B2430 0%, #0E1318 65%);">
     <div class="w-full max-w-md">
       <div class="text-center mb-8">
-        <img src="https://i.ibb.co/FkBJV2VQ/20260727-202658.png" alt="Geeli Distribution" style="width:80%;height:auto;display:block;margin:0 auto;" />
+        <img src="https://i.ibb.co/G4pM9QFW/20260805-165134.png" alt="Geeli Distribution" style="width:80%;height:auto;display:block;margin:0 auto;" />
       </div>
 
       <div class="bg-white rounded-2xl shadow-xl p-6 fade-in">
@@ -926,7 +930,7 @@
     <aside id="app-sidebar" class="w-64 md:w-60 shrink-0 text-white flex flex-col fixed md:static inset-y-0 left-0 z-30 -translate-x-full md:translate-x-0 transition-transform duration-200 ease-out" style="background:var(--graphite)">
       <div class="py-4 flex flex-col items-center border-b border-white/10 relative">
         <button id="btn-close-sidebar" class="absolute right-2 top-2 shrink-0 md:hidden text-slate-400 hover:text-white text-xl leading-none px-1">✕</button>
-        <img src="https://i.ibb.co/FkBJV2VQ/20260727-202658.png" alt="Geeli Distribution" style="width:80%;height:auto;display:block;" />
+        <img src="https://i.ibb.co/G4pM9QFW/20260805-165134.png" alt="Geeli Distribution" style="width:80%;height:auto;display:block;" />
       </div>
       <nav id="side-nav" class="flex-1 px-3 py-4 space-y-1 overflow-y-auto"></nav>
       <div class="px-4 py-4 border-t border-white/10">
@@ -1179,6 +1183,83 @@
     </button>`;
       }
 
+      function acasaCardNotificariPret(count) {
+        return `
+    <button type="button" id="acasa-card-notificari-pret" class="text-left bg-white rounded-xl border p-4 fade-in ${count ? "hover:shadow-md transition-shadow cursor-pointer" : "cursor-default"}" style="border-color:var(--line)">
+      <div class="text-xs font-medium text-slate-400 mb-1">Notificări modificări preț</div>
+      <div class="text-2xl font-bold ${count ? "text-red-600" : "text-slate-800"}">${count}</div>
+      ${count ? `<div class="text-xs text-slate-400 mt-1">Produse cu preț/discount modificat, LOG neconsultat</div>` : ""}
+    </button>`;
+      }
+
+      async function renderNotificariPretModal(produsIds, onChanged) {
+        const overlay = document.createElement("div");
+        overlay.id = "notificari-pret-overlay";
+        overlay.className =
+          "fixed inset-0 z-40 flex items-center justify-center px-4 py-8 overflow-y-auto";
+        overlay.style.background = "rgba(15,20,25,0.55)";
+        overlay.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl p-5 w-full max-w-lg fade-in my-auto">
+      <div class="flex items-start justify-between mb-1">
+        <h2 class="text-base font-bold">Notificări modificări preț</h2>
+        <button type="button" id="notificari-pret-close" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+      </div>
+      <p class="text-sm text-slate-500 mb-3">Produse cu preț/adaos/discount modificat — LOG neconsultat încă.</p>
+      <div id="notificari-pret-list" class="space-y-2 max-h-[65vh] overflow-y-auto">
+        <p class="text-sm text-slate-400 text-center py-4">Se încarcă...</p>
+      </div>
+    </div>`;
+        document.body.appendChild(overlay);
+        document
+          .getElementById("notificari-pret-close")
+          .addEventListener("click", () => overlay.remove());
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+
+        const listEl = document.getElementById("notificari-pret-list");
+        if (!produsIds || !produsIds.length) {
+          listEl.innerHTML = `<p class="text-sm text-slate-400 text-center py-4">Nicio notificare activă.</p>`;
+          return;
+        }
+
+        const { data, error } = await supa
+          .from("produse")
+          .select("*")
+          .in("id", produsIds);
+        if (!listEl.isConnected) return;
+        if (error) {
+          listEl.innerHTML = `<p class="text-sm text-red-600 text-center py-4">Eroare la încărcarea produselor: ${esc(error.message)}</p>`;
+          return;
+        }
+
+        listEl.innerHTML = (data || [])
+          .map(
+            (p) => `
+    <div class="border rounded-lg p-2.5 flex items-center justify-between gap-2" style="border-color:var(--line)">
+      <div>
+        <button type="button" data-deschide-log-produs="${p.id}" class="font-mono text-sm font-semibold underline decoration-dotted hover:text-[var(--teal-dark)]">${esc(p.id_produs)}</button>
+        <div class="text-xs text-slate-500 mt-0.5">${esc(p.marca || "—")}${p.model ? " · " + esc(p.model) : ""}${p.culoare ? " · " + esc(p.culoare) : ""}${p.vin ? " · VIN " + esc(p.vin) : ""}</div>
+      </div>
+      <span class="inline-block w-2 h-2 rounded-full bg-red-500 shrink-0" title="Preț/discount modificat — vezi LOG-ul produsului"></span>
+    </div>`,
+          )
+          .join("");
+
+        (data || []).forEach((p) => {
+          const btn = listEl.querySelector(
+            `[data-deschide-log-produs="${p.id}"]`,
+          );
+          if (!btn) return;
+          btn.addEventListener("click", () => {
+            renderLogModal("produs", p.id, p.id_produs, () => {
+              overlay.remove();
+              if (typeof onChanged === "function") onChanged();
+            });
+          });
+        });
+      }
+
       function acasaHeader() {
         const nume = currentProfile.nume || currentProfile.email;
         return `
@@ -1211,6 +1292,7 @@
         const myGen = renderGen;
         const { start, end } = lunaCurentaRangeAcasa();
         let cardsHtml = "";
+        let notifPretIdsAcasa = [];
 
         try {
           if (currentProfile.role === "magazin") {
@@ -1415,12 +1497,14 @@
               (s, p) => s + (Number(p.pret_cu_tva) || 0),
               0,
             );
+            notifPretIdsAcasa = await fetchIdsProduseCuNotificariActiveGlobal();
 
             cardsHtml = `
         ${acasaCard({ label: "Stoc depozit central", value: stocRes.count ?? 0, tabKey: "depozit" })}
         ${acasaCard({ label: "Produse trimise (ultimele 7 zile)", value: trimiseRes.count ?? 0, tabKey: "trimise" })}
         ${acasaCard({ label: "Comenzi active", value: comenziRes.count ?? 0, tabKey: "comenzi" })}
-        ${acasaCard({ label: "Vânzări luna aceasta", value: `${fmtNum(valoareVandute)} lei`, sub: `${vandute.length} produse`, colorClass: "text-emerald-600", tabKey: "vandute" })}`;
+        ${acasaCard({ label: "Vânzări luna aceasta", value: `${fmtNum(valoareVandute)} lei`, sub: `${vandute.length} produse`, colorClass: "text-emerald-600", tabKey: "vandute" })}
+        ${acasaCardNotificariPret(notifPretIdsAcasa.length)}`;
           }
 
           if (isStaleRender(myGen)) return;
@@ -1428,6 +1512,21 @@
             acasaHeader() +
             `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">${cardsHtml}</div>`;
           bindAcasaCards(container);
+          if (
+            currentProfile.role === "admin" ||
+            currentProfile.role === "superadmin"
+          ) {
+            const notifBtn = document.getElementById(
+              "acasa-card-notificari-pret",
+            );
+            if (notifBtn && notifPretIdsAcasa.length) {
+              notifBtn.addEventListener("click", () => {
+                renderNotificariPretModal(notifPretIdsAcasa, () =>
+                  renderAcasa(container),
+                );
+              });
+            }
+          }
         } catch (e) {
           if (isStaleRender(myGen)) return;
           container.innerHTML =
@@ -1836,10 +1935,74 @@
         return rezultat;
       }
 
+      // ---------------------------------------------------------------
+      // Notificări modificări preț — o bulină roșie lângă ID produs
+      // (vizibilă doar pentru Admin/Super Admin) semnalează că prețul,
+      // adaosul, discountul etc. au fost editate și LOG-ul produsului
+      // nu a fost încă deschis/consultat. Se bazează pe coloana
+      // jurnal_actiuni.vazut (default false) — orice rând înregistrat
+      // de modificariPretProdus (actiune de forma `Editare "..."`)
+      // rămâne "nevăzut" până când cineva deschide LOG-ul acelui produs.
+      // ---------------------------------------------------------------
+      const PREFIX_LOG_PRET = 'Editare "';
+
+      async function fetchProduseCuNotificariActive(produsIds) {
+        if (!produsIds || !produsIds.length) return new Set();
+        const { data, error } = await supa
+          .from("jurnal_actiuni")
+          .select("entitate_id")
+          .eq("tip_entitate", "produs")
+          .eq("vazut", false)
+          .ilike("actiune", `${PREFIX_LOG_PRET}%`)
+          .in("entitate_id", produsIds);
+        if (error || !data) return new Set();
+        return new Set(data.map((r) => r.entitate_id));
+      }
+
+      async function fetchIdsProduseCuNotificariActiveGlobal() {
+        const { data, error } = await supa
+          .from("jurnal_actiuni")
+          .select("entitate_id")
+          .eq("tip_entitate", "produs")
+          .eq("vazut", false)
+          .ilike("actiune", `${PREFIX_LOG_PRET}%`);
+        if (error || !data) return [];
+        return Array.from(new Set(data.map((r) => r.entitate_id)));
+      }
+
+      async function marcheazaNotificariProdusVazute(produsId) {
+        if (!produsId) return;
+        try {
+          await supa
+            .from("jurnal_actiuni")
+            .update({ vazut: true })
+            .eq("tip_entitate", "produs")
+            .eq("entitate_id", produsId)
+            .ilike("actiune", `${PREFIX_LOG_PRET}%`)
+            .eq("vazut", false);
+        } catch (e) {
+          // Auxiliar — nu întrerupem vizualizarea jurnalului.
+        }
+      }
+
+      function bulinaNotificarePretHtml(produsId, notificariActive) {
+        return notificariActive && notificariActive.has(produsId)
+          ? `<span class="inline-block w-2 h-2 rounded-full bg-red-500 shrink-0" title="Preț/discount modificat — vezi LOG-ul produsului"></span>`
+          : "";
+      }
+
       function distinctMarci(produse) {
         const set = new Set();
         (produse || []).forEach((p) => {
           if (p.marca) set.add(p.marca);
+        });
+        return Array.from(set).sort((a, b) => a.localeCompare(b, "ro"));
+      }
+
+      function distinctModele(produse) {
+        const set = new Set();
+        (produse || []).forEach((p) => {
+          if (p.model) set.add(p.model);
         });
         return Array.from(set).sort((a, b) => a.localeCompare(b, "ro"));
       }
@@ -2072,6 +2235,7 @@
         reservedIds,
         produsComandaMap,
         opts,
+        notificariActive,
       ) {
         const showAgent = !opts || opts.showAgent !== false;
         const showMagazin = !!(opts && opts.showMagazin);
@@ -2087,6 +2251,7 @@
             <th class="px-3 py-3 font-medium">Data comenzii</th>
             <th class="px-3 py-3 font-medium">Categorie</th>
             <th class="px-3 py-3 font-medium">Marcă</th>
+            <th class="px-3 py-3 font-medium">Model</th>
             <th class="px-3 py-3 font-medium">Culoare</th>
             <th class="px-3 py-3 font-medium">VIN</th>
             <th class="px-3 py-3 font-medium">Preț intrare</th>
@@ -2112,6 +2277,7 @@
               reservedIds.has(p.id),
               produsComandaMap ? produsComandaMap.get(p.id) : null,
               opts,
+              notificariActive,
             ),
           )
           .join("")}</tbody>
@@ -2123,6 +2289,7 @@
         "id_produs",
         "categorie",
         "marca",
+        "model",
         "culoare",
         "vin",
         "agent",
@@ -2139,6 +2306,12 @@
         return distinctMarci(data || []);
       }
 
+      // Listă distinctă de modele — aceeași logică ca fetchMarciDistincte.
+      async function fetchModeleDistincte() {
+        const { data } = await supa.from("produse").select("model");
+        return distinctModele(data || []);
+      }
+
       function renderStocSubtab(
         container,
         stocDisponibil,
@@ -2147,16 +2320,18 @@
         reservedIds,
         agentMagazinMap,
         marci,
+        modele,
         refresh,
         totalCount,
         pageKey,
+        notificariActive,
       ) {
         container.innerHTML = `
     <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
       <p class="text-sm text-slate-500">${totalCount} produs${totalCount === 1 ? "" : "e"} disponibil${totalCount === 1 ? "" : "e"} în stocul depozitului central</p>
       <button id="btn-add-produs" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Adaugă produs nou</button>
     </div>
-    ${renderProductsTableHtml(stocDisponibil, agenti, magazine, reservedIds, null, { showAgent: false, showMagazin: false })}
+    ${renderProductsTableHtml(stocDisponibil, agenti, magazine, reservedIds, null, { showAgent: false, showMagazin: false }, notificariActive)}
     ${paginationBarHtml(pageKey, totalCount)}`;
 
         stocDisponibil.forEach((p) =>
@@ -2166,6 +2341,7 @@
             magazine,
             agentMagazinMap,
             marci,
+            modele,
             refresh,
             null,
             reservedIds.has(p.id),
@@ -2175,7 +2351,7 @@
         document
           .getElementById("btn-add-produs")
           .addEventListener("click", () => {
-            renderAddProductModal(agenti, refresh, null, null, marci);
+            renderAddProductModal(agenti, refresh, null, null, marci, modele);
           });
 
         bindPaginationBar(container, pageKey, refresh);
@@ -2188,10 +2364,12 @@
         magazine,
         agentMagazinMap,
         marci,
+        modele,
         refresh,
         comandaCtx,
         totalCount,
         pageKey,
+        notificariActive,
       ) {
         if (!totalCount) {
           container.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun produs trimis către magazine încă.</p></div>`;
@@ -2201,7 +2379,7 @@
     <div class="mb-4">
       <p class="text-sm text-slate-500">${totalCount} produs${totalCount === 1 ? "" : "e"} trimis${totalCount === 1 ? "" : "e"} către magazine</p>
     </div>
-    ${renderProductsTableHtml(produseTrimise, agenti, magazine, new Set(), comandaCtx ? comandaCtx.map : null, { showAgent: true, showMagazin: true })}
+    ${renderProductsTableHtml(produseTrimise, agenti, magazine, new Set(), comandaCtx ? comandaCtx.map : null, { showAgent: true, showMagazin: true }, notificariActive)}
     ${paginationBarHtml(pageKey, totalCount)}`;
 
         produseTrimise.forEach((p) =>
@@ -2211,6 +2389,7 @@
             magazine,
             agentMagazinMap,
             marci,
+            modele,
             refresh,
             comandaCtx,
           ),
@@ -2245,11 +2424,13 @@
           { data: profiles, error: profErr },
           { data: asocieri, error: asoErr },
           marci,
+          modele,
         ] = await Promise.all([
           produseQuery,
           getCached("profiles"),
           getCached("agent_magazine"),
           fetchMarciDistincte(),
+          fetchModeleDistincte(),
           loadTvaRate(),
         ]);
 
@@ -2276,6 +2457,8 @@
               .eq("status_linie", "asignat")
           : { data: [] };
         const reservedIds = new Set((linii || []).map((l) => l.produs_id));
+        const notificariActive =
+          await fetchProduseCuNotificariActive(produsIds);
 
         const tvaProcentCurent = Math.round(TVA_RATE * 10000) / 100;
 
@@ -2285,8 +2468,10 @@
           magazine,
           agentMagazinMap,
           marci,
+          modele,
           stocDisponibil: produse || [],
           reservedIds,
+          notificariActive,
           tvaProcentCurent,
           totalCount: count || 0,
         };
@@ -2319,9 +2504,11 @@
           d.reservedIds,
           d.agentMagazinMap,
           d.marci,
+          d.modele,
           refresh,
           d.totalCount,
           pageKey,
+          d.notificariActive,
         );
 
         document
@@ -2412,11 +2599,13 @@
           { data: profiles, error: profErr },
           { data: asocieri, error: asoErr },
           marci,
+          modele,
         ] = await Promise.all([
           produseQuery,
           getCached("profiles"),
           getCached("agent_magazine"),
           fetchMarciDistincte(),
+          fetchModeleDistincte(),
         ]);
 
         const error =
@@ -2465,6 +2654,8 @@
           linii: linii || [],
           profiles: profiles || [],
         };
+        const notificariActive =
+          await fetchProduseCuNotificariActive(produsIds);
 
         return {
           error: null,
@@ -2472,8 +2663,10 @@
           magazine,
           agentMagazinMap,
           marci,
+          modele,
           produseTrimise: produse || [],
           comandaCtx,
+          notificariActive,
           totalCount: count || 0,
         };
       }
@@ -2496,10 +2689,12 @@
           d.magazine,
           d.agentMagazinMap,
           d.marci,
+          d.modele,
           refresh,
           d.comandaCtx,
           d.totalCount,
           pageKey,
+          d.notificariActive,
         );
         bindVanzareButoane(d.produseTrimise, refresh);
       }
@@ -2512,6 +2707,7 @@
         isReserved,
         comandaInfo,
         opts,
+        notificariActive,
       ) {
         const showAgent = !opts || opts.showAgent !== false;
         const showMagazin = !!(opts && opts.showMagazin);
@@ -2528,7 +2724,10 @@
     <td class="px-3 py-3 text-slate-400">${nr}</td>
     <td class="px-3 py-3 font-mono text-xs">
       <div class="flex flex-col items-start gap-1">
-        <button type="button" data-edit-produs="${p.id}" class="produs-id-link underline decoration-dotted hover:text-[var(--teal-dark)]" title="Deschide și editează datele produsului">${esc(p.id_produs)}</button>
+        <div class="flex items-center gap-1">
+          <button type="button" data-edit-produs="${p.id}" class="produs-id-link underline decoration-dotted hover:text-[var(--teal-dark)]" title="Deschide și editează datele produsului">${esc(p.id_produs)}</button>
+          ${bulinaNotificarePretHtml(p.id, notificariActive)}
+        </div>
         ${isReserved ? `<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700" title="Legat de o comandă, în așteptare de trimitere">Rezervat</span>` : ""}
         ${comandaInfo ? `<button type="button" class="comanda-produs-link inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 underline decoration-dotted hover:text-[var(--teal-dark)]" title="Deschide comanda inițială">${esc(comandaInfo.numar_comanda)}</button>` : ""}
       </div>
@@ -2538,6 +2737,7 @@
     <td class="px-3 py-3 text-xs text-slate-500 data-comenzii-cell">${p.data_comenzii ? new Date(p.data_comenzii).toLocaleDateString("ro-RO") : "—"}</td>
     <td class="px-3 py-3 text-xs">${esc(p.categorie || "—")}</td>
     <td class="px-3 py-3 text-xs">${esc(p.marca || "—")}</td>
+    <td class="px-3 py-3 text-xs">${esc(p.model || "—")}</td>
     <td class="px-3 py-3 text-xs">${esc(p.culoare || "—")}</td>
     <td class="px-3 py-3 text-xs font-mono">${esc(p.vin || "—")}</td>
     <td class="px-3 py-3 text-xs">${fmtNum(p.pret_intrare)}</td>
@@ -2562,6 +2762,7 @@
         magazine,
         agentMagazinMap,
         marci,
+        modele,
         refresh,
         comandaCtx,
         isReserved,
@@ -2578,6 +2779,7 @@
             magazine,
             refresh,
             marci,
+            modele,
             poateVanzareDirecta,
             agentMagazinMap,
           );
@@ -2612,6 +2814,7 @@
         onCreated,
         prefill,
         marci,
+        modele,
       ) {
         const overlay = document.createElement("div");
         overlay.id = "add-produs-overlay";
@@ -2670,6 +2873,14 @@
               <div id="add-marca-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
+          <div>${produsFieldLabel("Model")}
+            <div class="relative">
+              <input type="text" id="add-model" class="${produsInputBase()}" autocomplete="off" value="${esc(prefill?.model || "")}">
+              <div id="add-model-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
           <div>${produsFieldLabel("Culoare")}<input type="text" id="add-culoare" class="${produsInputBase()}" value="${esc(prefill?.culoare || "")}"></div>
         </div>
         <div class="grid grid-cols-2 gap-2">
@@ -2734,6 +2945,12 @@
           document.getElementById("add-marca"),
           document.getElementById("add-marca-suggestions"),
           marci || [],
+        );
+
+        attachAgentAutocomplete(
+          document.getElementById("add-model"),
+          document.getElementById("add-model-suggestions"),
+          modele || [],
         );
 
         const catSelect = document.getElementById("add-categorie");
@@ -2844,6 +3061,8 @@
                 categorie: categorieVal,
                 marca:
                   document.getElementById("add-marca").value.trim() || null,
+                model:
+                  document.getElementById("add-model").value.trim() || null,
                 culoare:
                   document.getElementById("add-culoare").value.trim() || null,
                 vin: document.getElementById("add-vin").value.trim() || null,
@@ -2889,6 +3108,7 @@
         magazine,
         onSaved,
         marci,
+        modele,
         poateVanzareDirecta,
         agentMagazinMap,
         showMagazinSiSterge = true,
@@ -2922,6 +3142,12 @@
             <div class="relative">
               <input type="text" id="edit-marca" class="${produsInputBase()}" autocomplete="off" value="${esc(p.marca || "")}">
               <div id="edit-marca-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+            </div>`;
+
+        const modelFieldHtml = `${produsFieldLabel("Model")}
+            <div class="relative">
+              <input type="text" id="edit-model" class="${produsInputBase()}" autocomplete="off" value="${esc(p.model || "")}">
+              <div id="edit-model-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>`;
 
         const discountFieldHtml = `
@@ -2976,39 +3202,7 @@
           <div>${marcaFieldHtml}</div>
         </div>
         <div class="grid grid-cols-2 gap-2">
-          <div>${produsFieldLabel("Culoare")}<input type="text" id="edit-culoare" class="${produsInputBase()}" value="${esc(p.culoare || "")}"></div>
-          <div>${produsFieldLabel("Preț de intrare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-intrare" class="${produsInputBase()} price-field" value="${p.pret_intrare ?? ""}"></div>
-        </div>
-        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
-          <div>${produsFieldLabel("Preț vânzare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-vanzare" class="${produsInputBase()} price-field" value="${p.pret_vanzare ?? ""}"></div>
-          <div>${produsFieldLabel("Adaos")}<input type="number" step="0.01" id="edit-adaos" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.adaos)}"></div>
-        </div>
-        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
-          <div>${produsFieldLabel("Alte costuri (fără TVA)")}<input type="number" step="0.01" id="edit-alte-costuri" class="${produsInputBase()} price-field" value="${p.alte_costuri ?? ""}"></div>
-          <div>${produsFieldLabel("Total (fără TVA)")}<input type="number" step="0.01" id="edit-total" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.total_fara_tva)}"></div>
-        </div>
-        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
-          <div>${produsFieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="edit-tva" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.pret_cu_tva)}"></div>
-          <div>${produsFieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="edit-pret-recomandat" class="${produsInputBase()}" value="${p.pret_recomandat ?? ""}"></div>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>${discountFieldHtml}</div>
-          <div>${civFieldHtml}</div>
-        </div>`;
-        } else {
-          camputiFieldsHtml = `
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            ${produsFieldLabel("Agent")}
-            <div class="relative">
-              <input type="text" id="edit-agent" class="${produsInputBase()}" placeholder="Caută sau scrie numele agentului" autocomplete="off" value="${esc(p.agent || "")}">
-              <div id="edit-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
-            </div>
-          </div>
-          <div>${categorieFieldHtml}</div>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>${marcaFieldHtml}</div>
+          <div>${modelFieldHtml}</div>
           <div>${produsFieldLabel("Culoare")}<input type="text" id="edit-culoare" class="${produsInputBase()}" value="${esc(p.culoare || "")}"></div>
         </div>
         <div class="grid grid-cols-2 gap-2">
@@ -3028,6 +3222,42 @@
           <div>${discountFieldHtml}</div>
         </div>
         <div>${civFieldHtml}</div>`;
+        } else {
+          camputiFieldsHtml = `
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            ${produsFieldLabel("Agent")}
+            <div class="relative">
+              <input type="text" id="edit-agent" class="${produsInputBase()}" placeholder="Caută sau scrie numele agentului" autocomplete="off" value="${esc(p.agent || "")}">
+              <div id="edit-agent-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+            </div>
+          </div>
+          <div>${categorieFieldHtml}</div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${marcaFieldHtml}</div>
+          <div>${modelFieldHtml}</div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${produsFieldLabel("Culoare")}<input type="text" id="edit-culoare" class="${produsInputBase()}" value="${esc(p.culoare || "")}"></div>
+          <div>${produsFieldLabel("Preț de intrare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-intrare" class="${produsInputBase()} price-field" value="${p.pret_intrare ?? ""}"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
+          <div>${produsFieldLabel("Preț vânzare (fără TVA)")}<input type="number" step="0.01" id="edit-pret-vanzare" class="${produsInputBase()} price-field" value="${p.pret_vanzare ?? ""}"></div>
+          <div>${produsFieldLabel("Adaos")}<input type="number" step="0.01" id="edit-adaos" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.adaos)}"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
+          <div>${produsFieldLabel("Alte costuri (fără TVA)")}<input type="number" step="0.01" id="edit-alte-costuri" class="${produsInputBase()} price-field" value="${p.alte_costuri ?? ""}"></div>
+          <div>${produsFieldLabel("Total (fără TVA)")}<input type="number" step="0.01" id="edit-total" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.total_fara_tva)}"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2">
+          <div>${produsFieldLabel("Preț cu TVA")}<input type="number" step="0.01" id="edit-tva" class="${produsInputBase()} calc-field font-semibold" value="${fmtNum(p.pret_cu_tva)}"></div>
+          <div>${produsFieldLabel("Preț Recomandat")}<input type="number" step="0.01" id="edit-pret-recomandat" class="${produsInputBase()}" value="${p.pret_recomandat ?? ""}"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${discountFieldHtml}</div>
+          <div>${civFieldHtml}</div>
+        </div>`;
         }
 
         overlay.innerHTML = `
@@ -3079,7 +3309,7 @@
         const editProdusLogBtn = document.getElementById("edit-produs-log-btn");
         if (editProdusLogBtn) {
           editProdusLogBtn.addEventListener("click", () => {
-            renderLogModal("produs", p.id, p.id_produs);
+            renderLogModal("produs", p.id, p.id_produs, onSaved);
           });
         }
 
@@ -3103,6 +3333,12 @@
           document.getElementById("edit-marca"),
           document.getElementById("edit-marca-suggestions"),
           marci || [],
+        );
+
+        attachAgentAutocomplete(
+          document.getElementById("edit-model"),
+          document.getElementById("edit-model-suggestions"),
+          modele || [],
         );
 
         const magazinInputEl = document.getElementById("edit-magazin");
@@ -3258,6 +3494,7 @@
               agent: agentVal,
               categorie: categorieVal,
               marca: document.getElementById("edit-marca").value.trim() || null,
+              model: document.getElementById("edit-model").value.trim() || null,
               culoare:
                 document.getElementById("edit-culoare").value.trim() || null,
               vin: document.getElementById("edit-vin").value.trim() || null,
@@ -3506,6 +3743,12 @@
         )
           return false;
         if (
+          l.model &&
+          (p.model || "").trim().toLowerCase() !==
+            (l.model || "").trim().toLowerCase()
+        )
+          return false;
+        if (
           l.culoare &&
           (p.culoare || "").trim().toLowerCase() !==
             (l.culoare || "").trim().toLowerCase()
@@ -3630,6 +3873,7 @@
       function renderComandaLinesEditor(
         containerEl,
         marci,
+        modele,
         marcaCategorieMap,
         autoAddFirstRow,
       ) {
@@ -3646,7 +3890,7 @@
             (c) => `<option value="${esc(c)}">${esc(c)}</option>`,
           ).join("");
           div.innerHTML = `
-      <div class="col-span-3">
+      <div class="col-span-2">
         <select class="line-categorie ${inputBase()} text-xs">
           <option value="">Categorie...</option>
           ${categorieOptions}
@@ -3657,9 +3901,13 @@
           <button type="button" class="line-categorie-alta-back text-slate-400 hover:text-slate-600 text-xs shrink-0" title="Alege din listă">↺</button>
         </div>
       </div>
-      <div class="col-span-3 relative">
+      <div class="col-span-2 relative">
         <input type="text" class="line-marca ${inputBase()} text-xs" placeholder="Marcă" autocomplete="off">
         <div class="line-marca-suggestions agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-32 overflow-y-auto text-xs" style="border-color:var(--line)"></div>
+      </div>
+      <div class="col-span-2 relative">
+        <input type="text" class="line-model ${inputBase()} text-xs" placeholder="Model" autocomplete="off">
+        <div class="line-model-suggestions agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-32 overflow-y-auto text-xs" style="border-color:var(--line)"></div>
       </div>
       <div class="col-span-3"><input type="text" class="line-culoare ${inputBase()} text-xs" placeholder="Culoare"></div>
       <div class="col-span-2">
@@ -3710,6 +3958,11 @@
               }
             },
           );
+          attachAgentAutocomplete(
+            div.querySelector(".line-model"),
+            div.querySelector(".line-model-suggestions"),
+            modele || [],
+          );
           div.querySelector(".line-remove").addEventListener("click", () => {
             div.remove();
           });
@@ -3733,6 +3986,7 @@
               catAlta.value = p.categorie;
             }
             div.querySelector(".line-marca").value = p.marca || "";
+            div.querySelector(".line-model").value = p.model || "";
             div.querySelector(".line-culoare").value = p.culoare || "";
           },
           getLines() {
@@ -3749,6 +4003,7 @@
                 return {
                   categorie: categorie || null,
                   marca: div.querySelector(".line-marca").value.trim() || null,
+                  model: div.querySelector(".line-model").value.trim() || null,
                   culoare:
                     div.querySelector(".line-culoare").value.trim() || null,
                   cantitate:
@@ -3756,7 +4011,7 @@
                     1,
                 };
               })
-              .filter((l) => l.categorie || l.marca || l.culoare);
+              .filter((l) => l.categorie || l.marca || l.model || l.culoare);
           },
         };
       }
@@ -3823,9 +4078,10 @@
       </div>
       <div id="comanda-stoc-central-wrap" class="hidden bg-white rounded-2xl shadow-xl p-4 w-full max-w-sm fade-in flex flex-col shrink-0">
         <p class="text-sm font-semibold text-slate-700 mb-2">Disponibil în stocul central</p>
-        <input type="text" id="comanda-stoc-central-search" class="${inputBase()} mb-2 text-xs" placeholder="Caută categorie, marcă, culoare...">
-        <div class="grid grid-cols-2 gap-2 mb-2">
+        <input type="text" id="comanda-stoc-central-search" class="${inputBase()} mb-2 text-xs" placeholder="Caută categorie, marcă, model, culoare...">
+        <div class="grid grid-cols-3 gap-2 mb-2">
           <input type="text" id="comanda-stoc-central-filtru-marca" class="${inputBase()} text-xs" placeholder="Filtrează după marcă">
+          <input type="text" id="comanda-stoc-central-filtru-model" class="${inputBase()} text-xs" placeholder="Filtrează după model">
           <input type="text" id="comanda-stoc-central-filtru-culoare" class="${inputBase()} text-xs" placeholder="Filtrează după culoare">
         </div>
         <div id="comanda-stoc-central-list" class="space-y-1 overflow-y-auto flex-1 min-h-0"></div>
@@ -3852,6 +4108,7 @@
         const editor = renderComandaLinesEditor(
           linesContainer,
           context.marci,
+          context.modele,
           context.marcaCategorieMap,
           false,
         );
@@ -3866,20 +4123,30 @@
         const veziStocBtn = document.getElementById("comanda-vezi-stoc");
         const stocWrap = document.getElementById("comanda-stoc-central-wrap");
         const stocList = document.getElementById("comanda-stoc-central-list");
-        function paintStocCentral(filterQ, filtruMarca, filtruCuloare) {
+        function paintStocCentral(
+          filterQ,
+          filtruMarca,
+          filtruModel,
+          filtruCuloare,
+        ) {
           const q = (filterQ || "").trim().toLowerCase();
           const fm = (filtruMarca || "").trim().toLowerCase();
+          const fmo = (filtruModel || "").trim().toLowerCase();
           const fc = (filtruCuloare || "").trim().toLowerCase();
           let filtered = !q
             ? stocDisponibilComanda
             : stocDisponibilComanda.filter((p) =>
-                [p.categorie, p.marca, p.culoare]
+                [p.categorie, p.marca, p.model, p.culoare]
                   .filter(Boolean)
                   .some((v) => v.toLowerCase().includes(q)),
               );
           if (fm)
             filtered = filtered.filter((p) =>
               (p.marca || "").toLowerCase().includes(fm),
+            );
+          if (fmo)
+            filtered = filtered.filter((p) =>
+              (p.model || "").toLowerCase().includes(fmo),
             );
           if (fc)
             filtered = filtered.filter((p) =>
@@ -3890,7 +4157,7 @@
                 .map(
                   (p) => `
         <button type="button" data-stoc-produs="${p.id}" class="w-full text-left border rounded-md px-2.5 py-1.5 text-xs hover:bg-slate-50 flex items-center justify-between gap-2" style="border-color:var(--line)">
-          <span>${esc(p.categorie || "—")} · ${esc(p.marca || "—")} · ${esc(p.culoare || "—")} · C.I.V.: ${p.civ ? "Da" : "Nu"}</span>
+          <span>${esc(p.categorie || "—")} · ${esc(p.marca || "—")} · ${esc(p.model || "—")} · ${esc(p.culoare || "—")} · C.I.V.: ${p.civ ? "Da" : "Nu"}</span>
           <span class="font-semibold whitespace-nowrap">${p.pret_cu_tva !== null && p.pret_cu_tva !== undefined ? fmtNum(p.pret_cu_tva) + " lei" : "—"}</span>
         </button>`,
                 )
@@ -3911,6 +4178,7 @@
           paintStocCentral(
             document.getElementById("comanda-stoc-central-search").value,
             document.getElementById("comanda-stoc-central-filtru-marca").value,
+            document.getElementById("comanda-stoc-central-filtru-model").value,
             document.getElementById("comanda-stoc-central-filtru-culoare")
               .value,
           );
@@ -3932,6 +4200,9 @@
             .addEventListener("input", repaintStocCentral);
           document
             .getElementById("comanda-stoc-central-filtru-marca")
+            .addEventListener("input", repaintStocCentral);
+          document
+            .getElementById("comanda-stoc-central-filtru-model")
             .addEventListener("input", repaintStocCentral);
           document
             .getElementById("comanda-stoc-central-filtru-culoare")
@@ -4006,6 +4277,7 @@
                     comanda_id: comanda.id,
                     categorie: l.categorie,
                     marca: l.marca,
+                    model: l.model,
                     culoare: l.culoare,
                     cantitate: 1,
                     status_linie: "neasignat",
@@ -4073,8 +4345,8 @@
         overlay.innerHTML = `
     <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg fade-in my-auto">
       <h2 class="text-lg font-bold mb-1">Alege produsul din stoc</h2>
-      <p class="text-sm text-slate-500 mb-3">Se cere: ${esc(l.categorie || "—")}${l.marca ? " · " + esc(l.marca) : ""}${l.culoare ? " · " + esc(l.culoare) : ""}</p>
-      <input type="text" id="pick-produs-search" class="${inputBase()} mb-3" placeholder="Caută după categorie, marcă, culoare, VIN...">
+      <p class="text-sm text-slate-500 mb-3">Se cere: ${esc(l.categorie || "—")}${l.marca ? " · " + esc(l.marca) : ""}${l.model ? " · " + esc(l.model) : ""}${l.culoare ? " · " + esc(l.culoare) : ""}</p>
+      <input type="text" id="pick-produs-search" class="${inputBase()} mb-3" placeholder="Caută după categorie, marcă, model, culoare, VIN...">
       <div id="pick-produs-list" class="space-y-1.5 max-h-72 overflow-y-auto"></div>
       <button type="button" id="pick-produs-cancel" class="w-full mt-4 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
     </div>`;
@@ -4093,7 +4365,7 @@
           const filtered = !q
             ? available
             : available.filter((p) =>
-                [p.categorie, p.marca, p.culoare, p.vin, p.id_produs]
+                [p.categorie, p.marca, p.model, p.culoare, p.vin, p.id_produs]
                   .filter(Boolean)
                   .some((v) => v.toLowerCase().includes(q)),
               );
@@ -4105,7 +4377,7 @@
             .map(
               (p) => `
       <button type="button" data-pick="${p.id}" class="pick-produs-item w-full text-left border rounded-lg px-3 py-2 text-sm hover:bg-slate-50" style="border-color:var(--line)">
-        <div class="font-medium">${esc(p.categorie || "—")} · ${esc(p.marca || "—")} · ${esc(p.culoare || "—")}</div>
+        <div class="font-medium">${esc(p.categorie || "—")} · ${esc(p.marca || "—")} · ${esc(p.model || "—")} · ${esc(p.culoare || "—")}</div>
         <div class="text-xs text-slate-400 font-mono">${esc(p.id_produs)}${p.vin ? " · VIN " + esc(p.vin) : ""}</div>
         <div class="text-xs mt-1">C.I.V.: ${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</div>
       </button>`,
@@ -4152,7 +4424,7 @@
         return `
   <div class="border rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap" style="border-color:var(--line)" data-linie="${l.id}">
     <div class="text-sm">
-      <div class="font-medium">${esc(l.categorie || "—")}${l.marca ? " · " + esc(l.marca) : ""}${l.culoare ? " · " + esc(l.culoare) : ""}</div>
+      <div class="font-medium">${esc(l.categorie || "—")}${l.marca ? " · " + esc(l.marca) : ""}${l.model ? " · " + esc(l.model) : ""}${l.culoare ? " · " + esc(l.culoare) : ""}</div>
       ${
         produs
           ? `<div class="text-xs text-emerald-700 mt-1">Legat de produsul ${canManageStock ? `<button type="button" data-edit-produs-line="${l.id}" class="underline decoration-dotted hover:text-[var(--teal-dark)]" title="Deschide și editează datele produsului">${esc(produs.id_produs)}</button>` : esc(produs.id_produs)}${produs.vin ? " · VIN " + esc(produs.vin) : ""}</div>`
@@ -4246,8 +4518,14 @@
                 if (lines) syncComandaStatus(l.comanda_id, lines);
                 paintLines();
               },
-              { categorie: l.categorie, marca: l.marca, culoare: l.culoare },
+              {
+                categorie: l.categorie,
+                marca: l.marca,
+                model: l.model,
+                culoare: l.culoare,
+              },
               distinctMarci(context.produse),
+              distinctModele(context.produse),
             );
           });
         }
@@ -4290,6 +4568,7 @@
               context.magazine || [],
               () => paintLines(),
               context.marci || [],
+              context.modele || [],
               undefined,
               null,
               false,
@@ -4308,7 +4587,7 @@
               "comanda",
               l.comanda_id,
               "Ștergere linie din comandă",
-              `${l.categorie || "—"}${l.marca ? " · " + l.marca : ""}${l.culoare ? " · " + l.culoare : ""}`,
+              `${l.categorie || "—"}${l.marca ? " · " + l.marca : ""}${l.model ? " · " + l.model : ""}${l.culoare ? " · " + l.culoare : ""}`,
             );
             const idx = lines.findIndex((x) => x.id === l.id);
             if (idx >= 0) lines.splice(idx, 1);
@@ -4463,6 +4742,7 @@
           addLinieBtn.addEventListener("click", () => {
             renderAddLinieComandaModal(
               context.marci,
+              context.modele,
               context.marcaCategorieMap,
               async (lineData) => {
                 const { data: linieNoua, error } = await supa
@@ -4471,6 +4751,7 @@
                     comanda_id: c.id,
                     categorie: lineData.categorie,
                     marca: lineData.marca,
+                    model: lineData.model,
                     culoare: lineData.culoare,
                     cantitate: lineData.cantitate,
                     status_linie: "neasignat",
@@ -4486,7 +4767,7 @@
                   "comanda",
                   c.id,
                   "Adăugare produs în comandă",
-                  `${lineData.categorie || "—"}${lineData.marca ? " · " + lineData.marca : ""}${lineData.culoare ? " · " + lineData.culoare : ""} (cant. ${lineData.cantitate})`,
+                  `${lineData.categorie || "—"}${lineData.marca ? " · " + lineData.marca : ""}${lineData.model ? " · " + lineData.model : ""}${lineData.culoare ? " · " + lineData.culoare : ""} (cant. ${lineData.cantitate})`,
                 );
                 syncComandaStatus(c.id, lines);
                 paintLines();
@@ -4704,7 +4985,12 @@
         }
       }
 
-      function renderAddLinieComandaModal(marci, marcaCategorieMap, onAdd) {
+      function renderAddLinieComandaModal(
+        marci,
+        modele,
+        marcaCategorieMap,
+        onAdd,
+      ) {
         const overlay = document.createElement("div");
         overlay.id = "add-linie-comanda-overlay";
         overlay.className =
@@ -4732,6 +5018,7 @@
         const editor = renderComandaLinesEditor(
           document.getElementById("add-linie-lines"),
           marci,
+          modele,
           marcaCategorieMap,
         );
 
@@ -4743,7 +5030,7 @@
             if (!lines.length) {
               msg.className = "text-sm text-center text-red-600";
               msg.textContent =
-                "Completează cel puțin categoria, marca sau culoarea.";
+                "Completează cel puțin categoria, marca, modelul sau culoarea.";
               return;
             }
             overlay.remove();
@@ -4791,7 +5078,7 @@
             (l) => `
         <div class="border rounded-lg p-3 flex items-center justify-between gap-3" style="border-color:var(--line)">
           <div class="text-sm">
-            <div class="font-medium">${esc(l.categorie || "—")}${l.marca ? " · " + esc(l.marca) : ""}${l.culoare ? " · " + esc(l.culoare) : ""}</div>
+            <div class="font-medium">${esc(l.categorie || "—")}${l.marca ? " · " + esc(l.marca) : ""}${l.model ? " · " + esc(l.model) : ""}${l.culoare ? " · " + esc(l.culoare) : ""}</div>
           </div>
           <div class="flex flex-col items-end">
             <span class="text-xs font-medium ${l.status_linie === "trimis" ? "text-emerald-700" : l.status_linie === "realocat" ? "text-red-600" : l.status_linie === "asignat" ? "text-blue-700" : "text-amber-700"}">${esc(lineStatusLabel(l.status_linie))}</span>
@@ -4870,6 +5157,7 @@
           allLinii: stocCtx.allLinii,
           produse: stocCtx.produse,
           marci: distinctMarci([...stocCtx.produse, ...stocCtx.allLinii]),
+          modele: distinctModele([...stocCtx.produse, ...stocCtx.allLinii]),
           marcaCategorieMap: buildMarcaCategorieMap(stocCtx.produse),
         };
 
@@ -4934,6 +5222,7 @@
                 magazine,
                 agenti,
                 marci: context.marci,
+                modele: context.modele,
                 marcaCategorieMap: context.marcaCategorieMap,
                 produse: context.produse,
                 allLinii: context.allLinii,
@@ -5001,6 +5290,10 @@
         }
 
         const marci = distinctMarci([...stocCtx.produse, ...stocCtx.allLinii]);
+        const modele = distinctModele([
+          ...stocCtx.produse,
+          ...stocCtx.allLinii,
+        ]);
         const marcaCategorieMap = buildMarcaCategorieMap(stocCtx.produse);
 
         const magazinIds = (asocieri || []).map((a) => a.magazin_id);
@@ -5040,6 +5333,7 @@
           allLinii: stocCtx.allLinii,
           produse: stocCtx.produse,
           marci,
+          modele,
           marcaCategorieMap,
         };
         const list = document.getElementById("comenzi-list");
@@ -5078,6 +5372,7 @@
               {
                 magazineAsignate,
                 marci,
+                modele,
                 marcaCategorieMap,
                 produse: stocCtx.produse,
                 allLinii: stocCtx.allLinii,
@@ -5143,6 +5438,10 @@
 
         const esteAlocatUnuiHub = (alocareHub || []).length > 0;
         const marci = distinctMarci([...stocCtx.produse, ...stocCtx.allLinii]);
+        const modele = distinctModele([
+          ...stocCtx.produse,
+          ...stocCtx.allLinii,
+        ]);
         const marcaCategorieMap = buildMarcaCategorieMap(stocCtx.produse);
 
         const totalCount = count || 0;
@@ -5206,6 +5505,7 @@
               {
                 magazineAsignate: [currentProfile],
                 marci,
+                modele,
                 marcaCategorieMap,
                 produse: stocCtx.produse,
                 allLinii: stocCtx.allLinii,
@@ -5280,6 +5580,10 @@
           return;
         }
         const marci = distinctMarci([...stocCtx.produse, ...stocCtx.allLinii]);
+        const modele = distinctModele([
+          ...stocCtx.produse,
+          ...stocCtx.allLinii,
+        ]);
         const marcaCategorieMap = buildMarcaCategorieMap(stocCtx.produse);
 
         const totalCount = count || 0;
@@ -5339,6 +5643,7 @@
               {
                 magazineAsignate: magazine,
                 marci,
+                modele,
                 marcaCategorieMap,
                 produse: stocCtx.produse,
                 allLinii: stocCtx.allLinii,
@@ -5465,7 +5770,15 @@
           .range(from, to);
         const orFilter = buildSearchOrFilter(
           tabSearchTerms[currentTabKey] || "",
-          ["id_produs", "agent", "categorie", "marca", "culoare", "vin"],
+          [
+            "id_produs",
+            "agent",
+            "categorie",
+            "marca",
+            "model",
+            "culoare",
+            "vin",
+          ],
         );
         if (orFilter) produseQuery = produseQuery.or(orFilter);
         const [
@@ -5505,6 +5818,7 @@
             <th class="px-3 py-3 font-medium">Data comenzii</th>
             <th class="px-3 py-3 font-medium">Categorie</th>
             <th class="px-3 py-3 font-medium">Marcă</th>
+            <th class="px-3 py-3 font-medium">Model</th>
             <th class="px-3 py-3 font-medium">Culoare</th>
             <th class="px-3 py-3 font-medium">VIN</th>
             <th class="px-3 py-3 font-medium">Preț vânzare</th>
@@ -5533,6 +5847,7 @@
             <td class="px-3 py-3 text-xs text-slate-500">${p.data_comenzii ? new Date(p.data_comenzii).toLocaleDateString("ro-RO") : "—"}</td>
             <td class="px-3 py-3 text-xs">${esc(p.categorie || "—")}</td>
             <td class="px-3 py-3 text-xs">${esc(p.marca || "—")}</td>
+    <td class="px-3 py-3 text-xs">${esc(p.model || "—")}</td>
             <td class="px-3 py-3 text-xs">${esc(p.culoare || "—")}</td>
             <td class="px-3 py-3 text-xs font-mono">${esc(p.vin || "—")}</td>
             <td class="px-3 py-3 text-xs font-medium">${fmtNum(p.pret_vanzare)}</td>
@@ -5582,6 +5897,7 @@
                 </td>
                 <td class="px-3 py-2 text-xs">${esc(p.categorie || "—")}</td>
                 <td class="px-3 py-2 text-xs">${esc(p.marca || "—")}</td>
+                <td class="px-3 py-2 text-xs">${esc(p.model || "—")}</td>
                 <td class="px-3 py-2 text-xs">${esc(p.culoare || "—")}</td>
                 <td class="px-3 py-2 text-xs font-mono">${esc(p.vin || "—")}</td>
                 <td class="px-3 py-2 text-xs font-medium">${fmtNum(p.pret_vanzare)}</td>
@@ -5600,6 +5916,7 @@
                 <th class="px-3 py-2 font-medium">ID produs</th>
                 <th class="px-3 py-2 font-medium">Categorie</th>
                 <th class="px-3 py-2 font-medium">Marcă</th>
+                <th class="px-3 py-2 font-medium">Model</th>
                 <th class="px-3 py-2 font-medium">Culoare</th>
                 <th class="px-3 py-2 font-medium">VIN</th>
                 <th class="px-3 py-2 font-medium">Preț vânzare</th>
@@ -5614,7 +5931,7 @@
                   ? stocMagazin
                       .map((p, i) => stocMagazinRowHtml(p, i, produsComandaMap))
                       .join("")
-                  : `<tr><td colspan="10" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
+                  : `<tr><td colspan="11" class="px-3 py-4 text-center text-slate-400 text-xs">Niciun produs momentan.</td></tr>`
               }
             </tbody>
           </table>`;
@@ -5726,6 +6043,7 @@
                 "id_produs",
                 "categorie",
                 "marca",
+                "model",
                 "culoare",
                 "vin",
               ]);
@@ -5903,6 +6221,7 @@
                 "id_produs",
                 "categorie",
                 "marca",
+                "model",
                 "culoare",
                 "vin",
               ]);
@@ -6482,6 +6801,7 @@
       <div class="space-y-2 text-sm">
         <div class="flex justify-between border-b pb-2" style="border-color:var(--line)"><span class="text-slate-400">Categorie</span><span class="font-medium">${esc(produs.categorie || "—")}</span></div>
         <div class="flex justify-between border-b pb-2" style="border-color:var(--line)"><span class="text-slate-400">Marcă</span><span class="font-medium">${esc(produs.marca || "—")}</span></div>
+        <div class="flex justify-between border-b pb-2" style="border-color:var(--line)"><span class="text-slate-400">Model</span><span class="font-medium">${esc(produs.model || "—")}</span></div>
         <div class="flex justify-between border-b pb-2" style="border-color:var(--line)"><span class="text-slate-400">Culoare</span><span class="font-medium">${esc(produs.culoare || "—")}</span></div>
         <div class="flex justify-between pb-1"><span class="text-slate-400">VIN</span><span class="font-medium font-mono">${esc(produs.vin || "—")}</span></div>
       </div>
@@ -7156,7 +7476,8 @@
         return `<a href="#" data-doc-path="${esc(path)}" data-doc-label="${esc(label)}" class="text-[var(--teal-dark)] underline decoration-dotted">${esc(label)}</a>`;
       }
 
-      function randVanzareHtml(p, nr, magazinLabel, cicluInfo) {
+      function randVanzareHtml(p, nr, magazinLabel, cicluInfo, canReturFn) {
+        const showReturCol = typeof canReturFn === "function";
         return `
   <tr class="border-b last:border-0 align-top" style="border-color:var(--line)">
     <td class="px-3 py-3 text-slate-400">${nr}</td>
@@ -7164,6 +7485,7 @@
     ${magazinLabel !== null ? `<td class="px-3 py-3 text-xs">${esc(magazinLabel)}</td>` : ""}
     <td class="px-3 py-3 text-xs text-slate-500">${p.data_vanzare ? new Date(p.data_vanzare).toLocaleDateString("ro-RO") : "—"}</td>
     <td class="px-3 py-3 text-xs">${esc(p.marca || "—")}</td>
+    <td class="px-3 py-3 text-xs">${esc(p.model || "—")}</td>
     <td class="px-3 py-3 text-xs">${esc(p.culoare || "—")}</td>
     <td class="px-3 py-3 text-xs font-mono">${esc(p.vin || "—")}</td>
     <td class="px-3 py-3 text-xs">${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</td>
@@ -7179,14 +7501,31 @@
     <td class="px-3 py-3 text-xs">
       ${cicluInfo ? `<button type="button" data-istoric-vanzare-produs="${p.id}" class="text-xs font-medium text-slate-500 hover:text-[var(--teal-dark)] underline decoration-dotted">Istoric</button>` : `<span class="text-slate-300">—</span>`}
     </td>
+    ${
+      showReturCol
+        ? `<td class="px-3 py-3 text-xs">
+      ${
+        canReturFn(p)
+          ? `<button type="button" data-retur-produs="${p.id}" class="rounded-md px-3 py-1.5 text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100">Retur</button>`
+          : `<span class="text-slate-300">—</span>`
+      }
+    </td>`
+        : ""
+    }
   </tr>`;
       }
 
-      function vanzariTableHtml(produseVandute, magazinLabelFn, incarcari) {
+      function vanzariTableHtml(
+        produseVandute,
+        magazinLabelFn,
+        incarcari,
+        canReturFn,
+      ) {
         if (!produseVandute.length) {
           return `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun produs vândut încă.</p></div>`;
         }
         const showMagazinCol = typeof magazinLabelFn === "function";
+        const showReturCol = typeof canReturFn === "function";
         return `
     <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
       <table class="w-full text-sm min-w-[1100px]">
@@ -7197,6 +7536,7 @@
             ${showMagazinCol ? '<th class="px-3 py-3 font-medium">Magazin</th>' : ""}
             <th class="px-3 py-3 font-medium">Data vânzării</th>
             <th class="px-3 py-3 font-medium">Marcă</th>
+            <th class="px-3 py-3 font-medium">Model</th>
             <th class="px-3 py-3 font-medium">Culoare</th>
             <th class="px-3 py-3 font-medium">VIN</th>
             <th class="px-3 py-3 font-medium">C.I.V.</th>
@@ -7206,6 +7546,7 @@
             <th class="px-3 py-3 font-medium">Adresă</th>
             <th class="px-3 py-3 font-medium">Documente</th>
             <th class="px-3 py-3 font-medium">Istoric încărcări</th>
+            ${showReturCol ? '<th class="px-3 py-3 font-medium">Retur</th>' : ""}
           </tr>
         </thead>
         <tbody>
@@ -7220,12 +7561,82 @@
                   incarcari || [],
                   p.data_vanzare ? p.data_vanzare.slice(0, 10) : undefined,
                 ),
+                canReturFn,
               ),
             )
             .join("")}
         </tbody>
       </table>
     </div>`;
+      }
+
+      async function executaReturProdusVandut(produs, refresh) {
+        const ok1 = confirm(
+          `Sigur returnezi produsul ${produs.id_produs}? Toate datele vânzării (client, documente) vor fi șterse definitiv, iar produsul va reveni în stoc.`,
+        );
+        if (!ok1) return;
+        const ok2 = confirm(
+          "Confirmă din nou: acțiunea este ireversibilă și nu poate fi anulată.",
+        );
+        if (!ok2) return;
+
+        try {
+          const pathuriDocumente = [
+            produs.factura_url,
+            produs.pv_predare_url,
+            produs.garantie_extinsa_url,
+          ].filter(Boolean);
+          if (pathuriDocumente.length) {
+            const { error: delErr } = await supa.storage
+              .from(BUCKET_VANZARI)
+              .remove(pathuriDocumente);
+            if (delErr) throw delErr;
+          }
+
+          const payload = {
+            vandut: false,
+            data_vanzare: null,
+            vandut_de: null,
+            client_nume: null,
+            client_adresa: null,
+            client_telefon: null,
+            client_email: null,
+            garantie_extinsa: false,
+            factura_url: null,
+            pv_predare_url: null,
+            garantie_extinsa_url: null,
+          };
+          if (produs.vanzare_directa) payload.vanzare_directa = false;
+
+          const { error } = await supa
+            .from("produse")
+            .update(payload)
+            .eq("id", produs.id);
+          if (error) throw error;
+
+          toast("Produsul a fost returnat.");
+          inregistreazaLog(
+            "produs",
+            produs.id,
+            "Retur produs vândut",
+            `ID produs: ${produs.id_produs}`,
+          );
+          if (typeof refresh === "function") refresh();
+        } catch (err) {
+          toast("Eroare la retur: " + err.message, true);
+        }
+      }
+
+      function bindReturButoane(container, produse, refresh) {
+        container.querySelectorAll("[data-retur-produs]").forEach((btn) => {
+          const produs = (produse || []).find(
+            (p) => p.id === btn.getAttribute("data-retur-produs"),
+          );
+          if (!produs) return;
+          btn.addEventListener("click", () =>
+            executaReturProdusVandut(produs, refresh),
+          );
+        });
       }
 
       function renderVanduteTab(container) {
@@ -7249,6 +7660,7 @@
           [
             "id_produs",
             "marca",
+            "model",
             "culoare",
             "vin",
             "client_nume",
@@ -7269,12 +7681,14 @@
               .select("*")
               .in("produs_id", produsIdsV)
           : { data: [] };
+        const refresh = () => renderVanduteMagazin(container);
         container.innerHTML = `
     <p class="text-sm text-slate-500 mb-4">${(produse || []).length} produs${(produse || []).length === 1 ? "" : "e"} vândut${(produse || []).length === 1 ? "" : "e"}</p>
-    ${vanzariTableHtml(produse || [], null, incarcariV || [])}`;
+    ${vanzariTableHtml(produse || [], null, incarcariV || [], () => true)}`;
         bindDeschideDocumenteVanzare(container);
         bindIstoricBaterieVanzare(container, produse || [], incarcariV || []);
         bindAdresaToggle(container);
+        bindReturButoane(container, produse || [], refresh);
       }
 
       async function renderVanduteHub(container) {
@@ -7310,6 +7724,7 @@
           [
             "id_produs",
             "marca",
+            "model",
             "culoare",
             "vin",
             "client_nume",
@@ -7360,6 +7775,7 @@
           [
             "id_produs",
             "marca",
+            "model",
             "culoare",
             "vin",
             "client_nume",
@@ -7395,16 +7811,16 @@
               .in("produs_id", produsIdsV)
           : { data: [] };
         const totalCount = count || 0;
+        const refresh = () => renderVanduteAdmin(container);
         container.innerHTML = `
     <p class="text-sm text-slate-500 mb-4">${totalCount} produs${totalCount === 1 ? "" : "e"} vândut${totalCount === 1 ? "" : "e"} în total</p>
-    ${vanzariTableHtml(produse || [], magazinLabelFn, incarcariV || [])}
+    ${vanzariTableHtml(produse || [], magazinLabelFn, incarcariV || [], (p) => !!p.vanzare_directa)}
     ${paginationBarHtml(pageKey, totalCount)}`;
         bindDeschideDocumenteVanzare(container);
         bindIstoricBaterieVanzare(container, produse || [], incarcariV || []);
         bindAdresaToggle(container);
-        bindPaginationBar(container, pageKey, () =>
-          renderVanduteAdmin(container),
-        );
+        bindReturButoane(container, produse || [], refresh);
+        bindPaginationBar(container, pageKey, refresh);
       }
 
       let statisticiState = null;
@@ -7440,6 +7856,7 @@
           agentNume: "",
           categorie: "",
           marca: "",
+          model: "",
           culoare: "",
           garantieExtinsa: "", // "" (Toate) | "da" | "nu"
           civ: "", // "" (Toate) | "da" | "nu"
@@ -7548,6 +7965,7 @@
           { key: "magazin", label: "Magazin" },
           { key: "categorie", label: "Categorie" },
           { key: "marca", label: "Marcă" },
+          { key: "model", label: "Model" },
           { key: "culoare", label: "Culoare" },
           { key: "vin", label: "VIN" },
           { key: "data_comenzii", label: "Data alocării" },
@@ -7810,6 +8228,9 @@
         const marciExistente = distinctMarci(
           (await supa.from("produse").select("marca")).data || [],
         );
+        const modeleExistente = distinctModele(
+          (await supa.from("produse").select("model")).data || [],
+        );
 
         if (!statisticiState) statisticiState = statisticiStateImplicit();
         const state = statisticiState;
@@ -7924,6 +8345,13 @@
               <div id="stat-marca-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
             </div>
           </div>
+          <div id="stat-model-wrap" class="w-28 ${state.tip === "produse" ? "" : "hidden"}">
+            ${statLabel("Model")}
+            <div class="relative">
+              <input type="text" id="stat-model-input" class="${statInput()}" placeholder="Toate" autocomplete="off" value="${esc(state.model)}">
+              <div id="stat-model-suggestions" class="agent-suggestions hidden absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto text-sm" style="border-color:var(--line)"></div>
+            </div>
+          </div>
           <div id="stat-culoare-wrap" class="w-24 ${state.tip === "produse" ? "" : "hidden"}">
             ${statLabel("Culoare")}
             <div class="relative">
@@ -8007,6 +8435,11 @@
             document.getElementById("stat-marca-input"),
             document.getElementById("stat-marca-suggestions"),
             marciExistente,
+          );
+          attachAgentAutocomplete(
+            document.getElementById("stat-model-input"),
+            document.getElementById("stat-model-suggestions"),
+            modeleExistente,
           );
           const culoriExistente = Array.from(
             new Set(
@@ -8222,6 +8655,7 @@
             }
             if (state.categorie) qs = qs.eq("categorie", state.categorie);
             if (state.marca) qs = qs.ilike("marca", `%${state.marca}%`);
+            if (state.model) qs = qs.ilike("model", `%${state.model}%`);
             if (state.culoare) qs = qs.ilike("culoare", `%${state.culoare}%`);
             if (state.agentNume) qs = qs.ilike("agent", `%${state.agentNume}%`);
             if (state.garantieExtinsa === "da")
@@ -8299,6 +8733,8 @@
           if (catSel) state.categorie = catSel.value;
           const marcaInput = document.getElementById("stat-marca-input");
           if (marcaInput) state.marca = marcaInput.value.trim();
+          const modelInput = document.getElementById("stat-model-input");
+          if (modelInput) state.model = modelInput.value.trim();
           const culoareInput = document.getElementById("stat-culoare-input");
           if (culoareInput) state.culoare = culoareInput.value.trim();
           const garantieSel = document.getElementById("stat-garantie");
