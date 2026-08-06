@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Geeli Distribution</title>
+    <meta name="robots" content="noindex, nofollow" />
     <link
       rel="icon"
       type="image/png"
@@ -2713,8 +2714,10 @@
       function magazinLabelPentru(magazinId, magazineList, esteVanzareDirecta) {
         if (!magazinId) return esteVanzareDirecta ? "Vânzare directă" : "—";
         const m = (magazineList || []).find((x) => x.id === magazinId);
-        if (m) return `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`;
-        const toateProfilurile = (_cache.profiles && _cache.profiles.data) || [];
+        if (m)
+          return `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`;
+        const toateProfilurile =
+          (_cache.profiles && _cache.profiles.data) || [];
         const hub = toateProfilurile.find(
           (x) => x.id === magazinId && x.role === "magazin_hub",
         );
@@ -5825,14 +5828,19 @@
           return;
         }
         const comandaIds = Array.from(
-          new Set((liniiProduse || []).map((l) => l.comanda_id).filter(Boolean)),
+          new Set(
+            (liniiProduse || []).map((l) => l.comanda_id).filter(Boolean),
+          ),
         );
         const [
           { data: linii, error: liniiErr },
           { data: comenzi, error: comErr },
         ] = comandaIds.length
           ? await Promise.all([
-              supa.from("comanda_produse").select("*").in("comanda_id", comandaIds),
+              supa
+                .from("comanda_produse")
+                .select("*")
+                .in("comanda_id", comandaIds),
               supa.from("comenzi").select("*").in("id", comandaIds),
             ])
           : [{ data: [] }, { data: [] }];
@@ -6023,14 +6031,19 @@
           : { data: [] };
         if (liniiProduseErr) return { error: liniiProduseErr };
         const comandaIds = Array.from(
-          new Set((liniiProduse || []).map((l) => l.comanda_id).filter(Boolean)),
+          new Set(
+            (liniiProduse || []).map((l) => l.comanda_id).filter(Boolean),
+          ),
         );
         const [
           { data: linii, error: liniiErr },
           { data: comenzi, error: comErr },
         ] = comandaIds.length
           ? await Promise.all([
-              supa.from("comanda_produse").select("*").in("comanda_id", comandaIds),
+              supa
+                .from("comanda_produse")
+                .select("*")
+                .in("comanda_id", comandaIds),
               supa.from("comenzi").select("*").in("id", comandaIds),
             ])
           : [{ data: [] }, { data: [] }];
@@ -6522,7 +6535,15 @@
           .range(from, to);
         const orFilter = buildSearchOrFilter(
           tabSearchTerms[currentTabKey] || "",
-          ["id_produs", "agent", "categorie", "marca", "model", "culoare", "vin"],
+          [
+            "id_produs",
+            "agent",
+            "categorie",
+            "marca",
+            "model",
+            "culoare",
+            "vin",
+          ],
         );
         if (orFilter) produseQuery = produseQuery.or(orFilter);
         const { data: produse, error, count } = await produseQuery;
@@ -7439,7 +7460,8 @@
             tabSearchTerms[currentTabKey] || "",
             ["id_produs"],
           );
-          if (orFilterBatHub) bateriiQueryHub = bateriiQueryHub.or(orFilterBatHub);
+          if (orFilterBatHub)
+            bateriiQueryHub = bateriiQueryHub.or(orFilterBatHub);
           const { data: produse, error: prodErr } = await bateriiQueryHub;
           if (prodErr) {
             container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(prodErr.message)}</div>`;
