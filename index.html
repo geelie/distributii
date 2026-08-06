@@ -654,7 +654,7 @@
   <div class="min-h-screen flex items-center justify-center px-4" style="background:radial-gradient(circle at 20% 20%, #1B2430 0%, #0E1318 65%);">
     <div class="w-full max-w-md">
       <div class="text-center mb-8">
-        <img src="https://i.ibb.co/mFRmvpGm/20260805-221555.png" alt="Geeli Distribution" style="width:80%;height:auto;display:block;margin:0 auto;" />
+        <img src="https://i.ibb.co/G4pM9QFW/20260805-165134.png" alt="Geeli Distribution" style="width:80%;height:auto;display:block;margin:0 auto;" />
       </div>
 
       <div class="bg-white rounded-2xl shadow-xl p-6 fade-in">
@@ -930,7 +930,7 @@
     <aside id="app-sidebar" class="w-64 md:w-60 shrink-0 text-white flex flex-col fixed md:static inset-y-0 left-0 z-30 -translate-x-full md:translate-x-0 transition-transform duration-200 ease-out" style="background:var(--graphite)">
       <div class="py-4 flex flex-col items-center border-b border-white/10 relative">
         <button id="btn-close-sidebar" class="absolute right-2 top-2 shrink-0 md:hidden text-slate-400 hover:text-white text-xl leading-none px-1">✕</button>
-        <img src="https://i.ibb.co/mFRmvpGm/20260805-221555.png" alt="Geeli Distribution" style="width:80%;height:auto;display:block;" />
+        <img src="https://i.ibb.co/G4pM9QFW/20260805-165134.png" alt="Geeli Distribution" style="width:80%;height:auto;display:block;" />
       </div>
       <nav id="side-nav" class="flex-1 px-3 py-4 space-y-1 overflow-y-auto"></nav>
       <div class="px-4 py-4 border-t border-white/10">
@@ -1055,9 +1055,10 @@
         if (role === "magazin_hub")
           return [
             { key: "acasa", label: "Acasă" },
+            { key: "depozit-hub", label: "Depozit HUB" },
             { key: "stoc", label: "Stoc magazine" },
             { key: "vandute", label: "Produse vândute" },
-            { key: "comenzi", label: "Comenzi magazine" },
+            { key: "comenzi", label: "Comenzi" },
             { key: "baterii", label: "Încărcare baterii" },
             { key: "statistici", label: "Statistici" },
           ];
@@ -1117,6 +1118,11 @@
           renderMagazinStoc(content);
         } else if (key === "stoc" && currentProfile.role === "magazin_hub") {
           renderHubStoc(content);
+        } else if (
+          key === "depozit-hub" &&
+          currentProfile.role === "magazin_hub"
+        ) {
+          renderDepozitHub(content);
         } else if (key === "stoc-alocat" && currentProfile.role === "agent") {
           renderAgentStoc(content);
         } else if (key === "baterii") {
@@ -2699,6 +2705,24 @@
         bindVanzareButoane(d.produseTrimise, refresh);
       }
 
+      // Rezolvă eticheta de "Magazin" pentru un produs/comandă: dacă
+      // magazin_id-ul aparține unui cont cu rolul "magazin_hub", produsul
+      // se află încă în "Depozit HUB" (stocul temporar al hub-ului) și nu
+      // a fost alocat unui magazin, deci se afișează "Depozit HUB" în loc
+      // de numele contului hub. Se bazează pe _cache.profiles.data, deja
+      // populat de apelul getCached("profiles") din funcțiile apelante.
+      function magazinLabelPentru(magazinId, magazineList, esteVanzareDirecta) {
+        if (!magazinId) return esteVanzareDirecta ? "Vânzare directă" : "—";
+        const m = (magazineList || []).find((x) => x.id === magazinId);
+        if (m) return `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`;
+        const toateProfilurile = (_cache.profiles && _cache.profiles.data) || [];
+        const hub = toateProfilurile.find(
+          (x) => x.id === magazinId && x.role === "magazin_hub",
+        );
+        if (hub) return "Depozit HUB";
+        return esteVanzareDirecta ? "Vânzare directă" : "—";
+      }
+
       function productRow(
         p,
         nr,
@@ -2711,14 +2735,11 @@
       ) {
         const showAgent = !opts || opts.showAgent !== false;
         const showMagazin = !!(opts && opts.showMagazin);
-        const magazinLabel = (() => {
-          const m = magazine.find((x) => x.id === p.magazin_id);
-          return m
-            ? `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`
-            : p.vanzare_directa
-              ? "Vânzare directă"
-              : "—";
-        })();
+        const magazinLabel = magazinLabelPentru(
+          p.magazin_id,
+          magazine,
+          p.vanzare_directa,
+        );
         return `
   <tr class="border-b last:border-0 align-top ${isReserved ? "bg-amber-50/60" : ""}" style="border-color:var(--line)" data-prow="${p.id}">
     <td class="px-3 py-3 text-slate-400">${nr}</td>
@@ -4044,6 +4065,7 @@
               <select id="comanda-magazin" class="${inputBase()}" required>
                 <option value="">Alege magazinul...</option>
                 ${mode === "admin" ? `<option value="${VANZARE_DIRECTA}">Vânzare directă</option>` : ""}
+                ${context.showDepozitHub ? `<option value="${currentUser.id}">Depozit HUB</option>` : ""}
                 ${magazinOptionsHtml}
               </select>
             </div>
@@ -4306,12 +4328,11 @@
       }
 
       function comandaCard(c, lines, magazine) {
-        const m = magazine.find((x) => x.id === c.magazin_id);
-        const magazinLabel = m
-          ? `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`
-          : c.vanzare_directa
-            ? "Vânzare directă"
-            : "—";
+        const magazinLabel = magazinLabelPentru(
+          c.magazin_id,
+          magazine,
+          c.vanzare_directa,
+        );
         const status = c.status || "in_asteptare";
         return `
   <div class="bg-white rounded-xl border p-2 flex items-center justify-between gap-3 flex-wrap" style="border-color:var(--line)">
@@ -4605,11 +4626,11 @@
         overlay.style.background = "rgba(15,20,25,0.55)";
 
         const m = context.magazine.find((x) => x.id === c.magazin_id);
-        const magazinLabel = m
-          ? `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`
-          : c.vanzare_directa
-            ? "Vânzare directă"
-            : "—";
+        const magazinLabel = magazinLabelPentru(
+          c.magazin_id,
+          context.magazine,
+          c.vanzare_directa,
+        );
 
         const isStockManager =
           currentProfile.role === "admin" ||
@@ -5055,12 +5076,11 @@
           "fixed inset-0 z-40 flex items-center justify-center px-4 py-8 overflow-y-auto";
         overlay.style.background = "rgba(15,20,25,0.55)";
 
-        const m = (profiles || []).find((p) => p.id === c.magazin_id);
-        const magazinLabel = m
-          ? `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`
-          : c.vanzare_directa
-            ? "Vânzare directă"
-            : "—";
+        const magazinLabel = magazinLabelPentru(
+          c.magazin_id,
+          profiles,
+          c.vanzare_directa,
+        );
         const status = c.status || "in_asteptare";
 
         overlay.innerHTML = `
@@ -5538,17 +5558,18 @@
         const magazine = (profiles || []).filter((p) =>
           magazinIds.includes(p.id),
         );
-        if (!magazine.length) {
-          container.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun magazin alocat.</p></div>`;
-          return;
-        }
+        // Comenzile hub-ului includ atât comenzile pentru magazinele alocate,
+        // cât și cele plasate cu "Magazin: Depozit HUB" (magazin_id = contul
+        // propriu al hub-ului) — de aceea nu se mai oprește aici dacă nu are
+        // niciun magazin alocat încă.
+        const idsComenziHub = [...magazinIds, currentUser.id];
         const [{ data: comenzi, error: comErr, count }, stocCtx] =
           await Promise.all([
             (() => {
               let q = supa
                 .from("comenzi")
                 .select("*", { count: "exact" })
-                .in("magazin_id", magazinIds)
+                .in("magazin_id", idsComenziHub)
                 .order("created_at", { ascending: false })
                 .range(from, to);
               const orFilter = buildSearchOrFilter(
@@ -5590,7 +5611,7 @@
         container.innerHTML = `
     <div class="comenzi-shell" id="comenzi-shell">
     <div class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
-      <p class="text-sm text-slate-500">${totalCount} ${totalCount === 1 ? "comandă" : "comenzi"} pentru magazinele alocate</p>
+      <p class="text-sm text-slate-500">${totalCount} ${totalCount === 1 ? "comandă" : "comenzi"}</p>
       <button id="btn-add-comanda" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Comandă nouă</button>
     </div>
     <div class="shrink-0">${statusFilterChipsHtml(comenziStatusFilter)}</div>
@@ -5647,6 +5668,7 @@
                 marcaCategorieMap,
                 produse: stocCtx.produse,
                 allLinii: stocCtx.allLinii,
+                showDepozitHub: true,
               },
               refresh,
             );
@@ -5692,12 +5714,11 @@
         const list = document.getElementById("aprobari-list");
         list.innerHTML = comenzi
           .map((c) => {
-            const m = magazine.find((x) => x.id === c.magazin_id);
-            const magazinLabel = m
-              ? `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`
-              : c.vanzare_directa
-                ? "Vânzare directă"
-                : "—";
+            const magazinLabel = magazinLabelPentru(
+              c.magazin_id,
+              magazine,
+              c.vanzare_directa,
+            );
             return `
   <div class="bg-white rounded-xl border p-4 flex items-center justify-between gap-3 flex-wrap" style="border-color:var(--line)">
     <div>
@@ -5781,28 +5802,44 @@
           ],
         );
         if (orFilter) produseQuery = produseQuery.or(orFilter);
-        const [
-          { data: produse, error, count },
-          { data: comenzi, error: comErr },
-        ] = await Promise.all([
-          produseQuery,
-          supa.from("comenzi").select("*").eq("magazin_id", currentUser.id),
-        ]);
+        const { data: produse, error, count } = await produseQuery;
         if (isStaleRender(myGen)) return;
-        if (error || comErr) {
-          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc((error || comErr).message)}</div>`;
+        if (error) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(error.message)}</div>`;
           return;
         }
-        const comenziIds = (comenzi || []).map((c) => c.id);
-        const { data: linii, error: liniiErr } = comenziIds.length
+        // Legătura produs → comandă se face după produs_id, nu după
+        // magazin_id-ul comenzii: un produs alocat din "Depozit HUB" către
+        // acest magazin a fost comandat inițial cu magazin_id = contul
+        // hub-ului, nu al acestui magazin.
+        const produsIds = (produse || []).map((p) => p.id);
+        const { data: liniiProduse, error: liniiProduseErr } = produsIds.length
           ? await supa
               .from("comanda_produse")
               .select("*")
-              .in("comanda_id", comenziIds)
+              .in("produs_id", produsIds)
+              .eq("status_linie", "trimis")
           : { data: [] };
         if (isStaleRender(myGen)) return;
+        if (liniiProduseErr) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(liniiProduseErr.message)}</div>`;
+          return;
+        }
+        const comandaIds = Array.from(
+          new Set((liniiProduse || []).map((l) => l.comanda_id).filter(Boolean)),
+        );
+        const [
+          { data: linii, error: liniiErr },
+          { data: comenzi, error: comErr },
+        ] = comandaIds.length
+          ? await Promise.all([
+              supa.from("comanda_produse").select("*").in("comanda_id", comandaIds),
+              supa.from("comenzi").select("*").in("id", comandaIds),
+            ])
+          : [{ data: [] }, { data: [] }];
+        if (isStaleRender(myGen)) return;
         const produsComandaMap = buildProdusComandaMap(
-          liniiErr ? [] : linii,
+          liniiErr ? [] : liniiProduse,
           comErr ? [] : comenzi,
         );
         const totalCount = count || 0;
@@ -5972,20 +6009,35 @@
         if (doarNevandute) q = q.eq("vandut", false);
         const { data: produse, error, count } = await q;
         if (error) return { error };
-        const { data: comenzi, error: comErr } = await supa
-          .from("comenzi")
-          .select("*")
-          .eq("magazin_id", magazinId);
-        if (comErr) return { error: comErr };
-        const comenziIds = (comenzi || []).map((c) => c.id);
-        const { data: linii, error: liniiErr } = comenziIds.length
+        // Legătura produs → comandă se face după produs_id, nu după
+        // magazin_id-ul comenzii: un produs alocat din "Depozit HUB" către
+        // acest magazin a fost comandat inițial cu magazin_id = contul
+        // hub-ului, nu al acestui magazin, așa că o căutare "comenzi pentru
+        // acest magazin" nu l-ar găsi niciodată.
+        const produsIds = (produse || []).map((p) => p.id);
+        const { data: liniiProduse, error: liniiProduseErr } = produsIds.length
           ? await supa
               .from("comanda_produse")
               .select("*")
-              .in("comanda_id", comenziIds)
+              .in("produs_id", produsIds)
+              .eq("status_linie", "trimis")
           : { data: [] };
+        if (liniiProduseErr) return { error: liniiProduseErr };
+        const comandaIds = Array.from(
+          new Set((liniiProduse || []).map((l) => l.comanda_id).filter(Boolean)),
+        );
+        const [
+          { data: linii, error: liniiErr },
+          { data: comenzi, error: comErr },
+        ] = comandaIds.length
+          ? await Promise.all([
+              supa.from("comanda_produse").select("*").in("comanda_id", comandaIds),
+              supa.from("comenzi").select("*").in("id", comandaIds),
+            ])
+          : [{ data: [] }, { data: [] }];
         if (liniiErr) return { error: liniiErr };
-        const produsComandaMap = buildProdusComandaMap(linii, comenzi);
+        if (comErr) return { error: comErr };
+        const produsComandaMap = buildProdusComandaMap(liniiProduse, comenzi);
         return {
           error: null,
           produse: produse || [],
@@ -6206,44 +6258,66 @@
         const termenCautare = tabSearchTerms[currentTabKey] || "";
 
         if (termenCautare) {
-          const [
-            { data: produse, error: prodErr },
-            { data: comenzi, error: comErr },
-          ] = await Promise.all([
-            (() => {
-              let q = supa
-                .from("produse")
-                .select("*")
-                .in("magazin_id", magazinIds)
-                .eq("vandut", false)
-                .order("created_at", { ascending: true });
-              const orFilter = buildSearchOrFilter(termenCautare, [
-                "id_produs",
-                "categorie",
-                "marca",
-                "model",
-                "culoare",
-                "vin",
-              ]);
-              return orFilter ? q.or(orFilter) : q;
-            })(),
-            supa.from("comenzi").select("*").in("magazin_id", magazinIds),
-          ]);
+          const { data: produse, error: prodErr } = await (() => {
+            let q = supa
+              .from("produse")
+              .select("*")
+              .in("magazin_id", magazinIds)
+              .eq("vandut", false)
+              .order("created_at", { ascending: true });
+            const orFilter = buildSearchOrFilter(termenCautare, [
+              "id_produs",
+              "categorie",
+              "marca",
+              "model",
+              "culoare",
+              "vin",
+            ]);
+            return orFilter ? q.or(orFilter) : q;
+          })();
           if (isStaleRender(myGen)) return;
-          if (prodErr || comErr) {
-            container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc((prodErr || comErr).message)}</div>`;
+          if (prodErr) {
+            container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(prodErr.message)}</div>`;
             return;
           }
-          const comenziIds = (comenzi || []).map((c) => c.id);
-          const { data: linii, error: liniiErr } = comenziIds.length
-            ? await supa
-                .from("comanda_produse")
-                .select("*")
-                .in("comanda_id", comenziIds)
-            : { data: [] };
+          // Legătura produs → comandă se face după produs_id, nu după
+          // magazin_id-ul comenzii (vezi nota din loadStocMagazinPagina):
+          // un produs alocat din Depozit HUB a fost comandat inițial pe
+          // contul hub-ului, nu pe magazinul curent.
+          const produsIds = (produse || []).map((p) => p.id);
+          const { data: liniiProduse, error: liniiProduseErr } =
+            produsIds.length
+              ? await supa
+                  .from("comanda_produse")
+                  .select("*")
+                  .in("produs_id", produsIds)
+                  .eq("status_linie", "trimis")
+              : { data: [] };
+          if (isStaleRender(myGen)) return;
+          if (liniiProduseErr) {
+            container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(liniiProduseErr.message)}</div>`;
+            return;
+          }
+          const comandaIds = Array.from(
+            new Set(
+              (liniiProduse || []).map((l) => l.comanda_id).filter(Boolean),
+            ),
+          );
+          const [
+            { data: linii, error: liniiErr },
+            { data: comenzi, error: comErr },
+          ] = comandaIds.length
+            ? await Promise.all([
+                supa
+                  .from("comanda_produse")
+                  .select("*")
+                  .in("comanda_id", comandaIds),
+                supa.from("comenzi").select("*").in("id", comandaIds),
+              ])
+            : [{ data: [] }, { data: [] }];
           if (isStaleRender(myGen)) return;
           const produsComandaMap = buildProdusComandaMap(
-            liniiErr ? [] : linii,
+            liniiErr ? [] : liniiProduse,
             comErr ? [] : comenzi,
           );
 
@@ -6353,6 +6427,196 @@
             if (!isHidden && !loaded) await incarcaSiRandeaza();
           });
         });
+      }
+
+      // ---------------------------------------------------------------
+      // "Depozit HUB" — depozitul temporar al Magazin-HUB. Aici ajung
+      // produsele comenzilor plasate cu "Magazin: Depozit HUB" și
+      // trimise din Depozitul central (produse.magazin_id = id-ul
+      // contului hub). De aici, hub-ul alocă produsele către unul din
+      // magazinele proprii alocate (hub_magazine) — la alocare,
+      // produsul trece în stocul acelui magazin (magazin_id devine
+      // id-ul magazinului ales). Data de referință pentru ciclul de
+      // încărcare a bateriei (data_comenzii) NU se modifică la alocare —
+      // rămâne data intrării în Depozit HUB / plecării din depozitul
+      // central, conform cerinței.
+      // ---------------------------------------------------------------
+      function renderAlocaMagazinModal(produs, magazineAlocate, onAlocat) {
+        const overlay = document.createElement("div");
+        overlay.id = "aloca-magazin-overlay";
+        overlay.className =
+          "fixed inset-0 z-50 flex items-center justify-center px-4 py-8 overflow-y-auto";
+        overlay.style.background = "rgba(15,20,25,0.55)";
+        overlay.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md fade-in my-auto">
+      <h2 class="text-lg font-bold mb-1">Alocă la magazin</h2>
+      <p class="text-sm text-slate-500 mb-3">${esc(produs.categorie || "—")} · ${esc(produs.marca || "—")} · ${esc(produs.model || "—")} · ${esc(produs.culoare || "—")} <span class="font-mono text-xs">(${esc(produs.id_produs)})</span></p>
+      <select id="aloca-magazin-select" class="${inputBase()} mb-2">
+        <option value="">Alege magazinul...</option>
+        ${magazineAlocate
+          .map(
+            (m) =>
+              `<option value="${m.id}">${esc(m.nume || m.email)}${m.filiala ? " - " + esc(m.filiala) : ""}</option>`,
+          )
+          .join("")}
+      </select>
+      <p id="aloca-magazin-msg" class="text-sm text-center text-red-600 mb-2"></p>
+      <div class="flex gap-2 pt-1">
+        <button type="button" id="aloca-magazin-cancel" class="flex-1 rounded-lg py-2.5 text-sm font-medium border" style="border-color:var(--line)">Anulează</button>
+        <button type="button" id="aloca-magazin-confirm" class="flex-1 btn-primary rounded-lg py-2.5 text-sm">Alocă produsul</button>
+      </div>
+    </div>`;
+        document.body.appendChild(overlay);
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+        document
+          .getElementById("aloca-magazin-cancel")
+          .addEventListener("click", () => overlay.remove());
+        document
+          .getElementById("aloca-magazin-confirm")
+          .addEventListener("click", async () => {
+            const sel = document.getElementById("aloca-magazin-select").value;
+            const msg = document.getElementById("aloca-magazin-msg");
+            if (!sel) {
+              msg.textContent = "Alege magazinul destinatar.";
+              return;
+            }
+            const btn = document.getElementById("aloca-magazin-confirm");
+            btn.disabled = true;
+            btn.textContent = "Se alocă...";
+            await onAlocat(sel);
+            overlay.remove();
+          });
+      }
+
+      async function renderDepozitHub(container) {
+        container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
+        const pageKey = currentTabKey;
+        const { from, to } = rangeFor(pageKey);
+
+        const [
+          { data: asocieri, error: asoErr },
+          { data: profiles, error: profErr },
+        ] = await Promise.all([
+          supa.from("hub_magazine").select("*").eq("hub_id", currentUser.id),
+          getCached("profiles"),
+        ]);
+        if (isStaleRender(myGen)) return;
+        if (asoErr || profErr) {
+          const e = asoErr || profErr;
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(e.message)}</div>`;
+          return;
+        }
+        const magazinIds = (asocieri || []).map((a) => a.magazin_id);
+        const magazineAlocate = (profiles || []).filter((p) =>
+          magazinIds.includes(p.id),
+        );
+
+        let produseQuery = supa
+          .from("produse")
+          .select("*", { count: "exact" })
+          .eq("magazin_id", currentUser.id)
+          .eq("vandut", false)
+          .order("created_at", { ascending: true })
+          .range(from, to);
+        const orFilter = buildSearchOrFilter(
+          tabSearchTerms[currentTabKey] || "",
+          ["id_produs", "agent", "categorie", "marca", "model", "culoare", "vin"],
+        );
+        if (orFilter) produseQuery = produseQuery.or(orFilter);
+        const { data: produse, error, count } = await produseQuery;
+        if (isStaleRender(myGen)) return;
+        if (error) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(error.message)}</div>`;
+          return;
+        }
+
+        const totalCount = count || 0;
+        container.innerHTML = `
+    <p class="text-sm text-slate-500 mb-4">${totalCount} produs${totalCount === 1 ? "" : "e"} în Depozit HUB, în așteptare de alocare către un magazin${magazineAlocate.length ? "" : " (niciun magazin alocat încă)"}</p>
+    <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
+      <table class="w-full text-sm min-w-[1100px]">
+        <thead>
+          <tr class="text-left text-slate-500 border-b" style="border-color:var(--line)">
+            <th class="px-3 py-3 font-medium">Nr.</th>
+            <th class="px-3 py-3 font-medium">ID produs</th>
+            <th class="px-3 py-3 font-medium">Agent</th>
+            <th class="px-3 py-3 font-medium">Data comenzii</th>
+            <th class="px-3 py-3 font-medium">Categorie</th>
+            <th class="px-3 py-3 font-medium">Marcă</th>
+            <th class="px-3 py-3 font-medium">Model</th>
+            <th class="px-3 py-3 font-medium">Culoare</th>
+            <th class="px-3 py-3 font-medium">VIN</th>
+            <th class="px-3 py-3 font-medium">C.I.V.</th>
+            <th class="px-3 py-3 font-medium">Acțiuni</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(produse || [])
+            .map((p, i) => {
+              return `
+          <tr class="border-b last:border-0" style="border-color:var(--line)">
+            <td class="px-3 py-3 text-slate-400">${i + 1}</td>
+            <td class="px-3 py-3 font-mono text-xs">${esc(p.id_produs)}</td>
+            <td class="px-3 py-3 text-xs">${esc(p.agent || "—")}</td>
+            <td class="px-3 py-3 text-xs text-slate-500">${p.data_comenzii ? new Date(p.data_comenzii).toLocaleDateString("ro-RO") : "—"}</td>
+            <td class="px-3 py-3 text-xs">${esc(p.categorie || "—")}</td>
+            <td class="px-3 py-3 text-xs">${esc(p.marca || "—")}</td>
+            <td class="px-3 py-3 text-xs">${esc(p.model || "—")}</td>
+            <td class="px-3 py-3 text-xs">${esc(p.culoare || "—")}</td>
+            <td class="px-3 py-3 text-xs font-mono">${esc(p.vin || "—")}</td>
+            <td class="px-3 py-3 text-xs">${p.civ ? '<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700">Da</span>' : '<span class="text-slate-400">Nu</span>'}</td>
+            <td class="px-3 py-3 whitespace-nowrap">
+              <button type="button" data-aloca-produs="${p.id}" class="btn-primary rounded-md px-3 py-1.5 text-xs" ${magazineAlocate.length ? "" : 'disabled title="Nu ai niciun magazin alocat"'}>Alocă la magazin</button>
+            </td>
+          </tr>`;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    ${paginationBarHtml(pageKey, totalCount)}`;
+
+        const refresh = () => renderDepozitHub(container);
+        (produse || []).forEach((p) => {
+          const btn = document.querySelector(`[data-aloca-produs="${p.id}"]`);
+          if (!btn) return;
+          btn.addEventListener("click", () => {
+            renderAlocaMagazinModal(p, magazineAlocate, async (magazinId) => {
+              const { data: updData, error: updErr } = await supa
+                .from("produse")
+                .update({
+                  magazin_id: magazinId,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", p.id)
+                .select();
+              if (updErr) {
+                toast("Eroare la alocare: " + updErr.message, true);
+                return;
+              }
+              if (!updData || !updData.length) {
+                toast(
+                  "Alocarea nu a fost salvată (produsul nu a fost actualizat — verifică permisiunile bazei de date pentru rolul Magazin-HUB).",
+                  true,
+                );
+                return;
+              }
+              const magDest = magazineAlocate.find((m) => m.id === magazinId);
+              inregistreazaLog(
+                "produs",
+                p.id,
+                "Alocare din Depozit HUB",
+                `ID produs: ${p.id_produs} → magazin: ${magDest ? magDest.nume || magDest.email : magazinId}`,
+              );
+              toast("Produsul a fost alocat magazinului selectat.");
+              refresh();
+            });
+          });
+        });
+        bindPaginationBar(container, pageKey, refresh);
       }
 
       function renderAgentComenziTab(container) {
@@ -6894,10 +7158,7 @@
             );
             let magazinLabel = "";
             if (arataMagazin) {
-              const m = (magazine || []).find((x) => x.id === p.magazin_id);
-              magazinLabel = m
-                ? `${m.nume || m.email}${m.filiala ? " - " + m.filiala : ""}`
-                : "—";
+              magazinLabel = magazinLabelPentru(p.magazin_id, magazine, false);
             }
             return `
           <tr class="border-b last:border-0" style="border-color:var(--line)">
@@ -7129,53 +7390,132 @@
         const magazine = (profiles || []).filter((p) =>
           magazinIds.includes(p.id),
         );
-        if (!magazine.length) {
-          container.innerHTML = `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun magazin alocat.</p></div>`;
-          return;
-        }
-        let bateriiQueryHub = supa
+
+        // Stocul propriu din "Depozit HUB" — Magazin-HUB este responsabil
+        // de încărcarea bateriilor cât timp produsul se află aici, la fel
+        // ca orice magazin pentru stocul propriu (secțiune editabilă,
+        // separată de rezumatul/filtrul comun al magazinelor alocate).
+        let bateriiQueryProprii = supa
           .from("produse")
           .select("*")
-          .in("magazin_id", magazinIds)
+          .eq("magazin_id", currentUser.id)
           .eq("vandut", false)
           .order("created_at", { ascending: true });
-        const orFilterBatHub = buildSearchOrFilter(
+        const orFilterBatProprii = buildSearchOrFilter(
           tabSearchTerms[currentTabKey] || "",
           ["id_produs"],
         );
-        if (orFilterBatHub)
-          bateriiQueryHub = bateriiQueryHub.or(orFilterBatHub);
-        const { data: produse, error: prodErr } = await bateriiQueryHub;
-        if (prodErr) {
-          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(prodErr.message)}</div>`;
+        if (orFilterBatProprii)
+          bateriiQueryProprii = bateriiQueryProprii.or(orFilterBatProprii);
+        const { data: produseProprii, error: prodErrProprii } =
+          await bateriiQueryProprii;
+        if (prodErrProprii) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(prodErrProprii.message)}</div>`;
           return;
         }
-        const produsIds = (produse || []).map((p) => p.id);
-        const { data: incarcari, error: incErr } = produsIds.length
-          ? await supa
-              .from("incarcari_baterie")
-              .select("*")
-              .in("produs_id", produsIds)
-          : { data: [] };
-        if (incErr) {
-          container.innerHTML = `<div class="text-red-600 text-sm">Eroare la încărcarea istoricului: ${esc(incErr.message)}</div>`;
+        const produsIdsProprii = (produseProprii || []).map((p) => p.id);
+        const { data: incarcariProprii, error: incErrProprii } =
+          produsIdsProprii.length
+            ? await supa
+                .from("incarcari_baterie")
+                .select("*")
+                .in("produs_id", produsIdsProprii)
+            : { data: [] };
+        if (incErrProprii) {
+          container.innerHTML = `<div class="text-red-600 text-sm">Eroare la încărcarea istoricului: ${esc(incErrProprii.message)}</div>`;
           return;
+        }
+
+        let sectiuneMagazine = `<div class="bg-white rounded-xl border p-10 text-center mt-6" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun magazin alocat.</p></div>`;
+        let produseMagazine = [];
+        let incarcariMagazine = [];
+        if (magazine.length) {
+          let bateriiQueryHub = supa
+            .from("produse")
+            .select("*")
+            .in("magazin_id", magazinIds)
+            .eq("vandut", false)
+            .order("created_at", { ascending: true });
+          const orFilterBatHub = buildSearchOrFilter(
+            tabSearchTerms[currentTabKey] || "",
+            ["id_produs"],
+          );
+          if (orFilterBatHub) bateriiQueryHub = bateriiQueryHub.or(orFilterBatHub);
+          const { data: produse, error: prodErr } = await bateriiQueryHub;
+          if (prodErr) {
+            container.innerHTML = `<div class="text-red-600 text-sm">Eroare: ${esc(prodErr.message)}</div>`;
+            return;
+          }
+          produseMagazine = produse || [];
+          const produsIds = produseMagazine.map((p) => p.id);
+          const { data: incarcari, error: incErr } = produsIds.length
+            ? await supa
+                .from("incarcari_baterie")
+                .select("*")
+                .in("produs_id", produsIds)
+            : { data: [] };
+          if (incErr) {
+            container.innerHTML = `<div class="text-red-600 text-sm">Eroare la încărcarea istoricului: ${esc(incErr.message)}</div>`;
+            return;
+          }
+          incarcariMagazine = incarcari || [];
+          sectiuneMagazine = `
+    ${bateriiRezumatBar(produseMagazine, incarcariMagazine, bateriiFiltruActiv)}
+    ${renderBateriiTable(filtreazaProduseBaterii(produseMagazine, incarcariMagazine, bateriiFiltruActiv), incarcariMagazine, false, true, magazine)}`;
         }
 
         container.innerHTML = `
-    ${bateriiRezumatBar(produse || [], incarcari || [], bateriiFiltruActiv)}
-    ${renderBateriiTable(filtreazaProduseBaterii(produse || [], incarcari || [], bateriiFiltruActiv), incarcari || [], false, true, magazine)}`;
+    <h3 class="text-sm font-semibold text-slate-700 mb-2">Depozit HUB</h3>
+    ${renderBateriiTable(produseProprii || [], incarcariProprii || [], true, false, null)}
+    <h3 class="text-sm font-semibold text-slate-700 mt-6 mb-2">Magazine alocate</h3>
+    ${sectiuneMagazine}`;
 
-        bindBateriiRezumatBar(container, () => renderBateriiHub(container));
         bindBateriiTableEvents(
           container,
-          filtreazaProduseBaterii(
-            produse || [],
-            incarcari || [],
-            bateriiFiltruActiv,
-          ),
-          incarcari || [],
+          produseProprii || [],
+          incarcariProprii || [],
+          async (p, btn) => {
+            btn.disabled = true;
+            btn.textContent = "Se salvează...";
+            const { error: insErr } = await supa
+              .from("incarcari_baterie")
+              .insert({
+                produs_id: p.id,
+                data_incarcare: astaziISO(),
+                inregistrat_de: currentUser.id,
+              });
+            if (insErr) {
+              toast(
+                "Eroare la înregistrarea încărcării: " + insErr.message,
+                true,
+              );
+              btn.disabled = false;
+              btn.textContent = "Marchează încărcare azi";
+              return;
+            }
+            toast("Încărcare înregistrată.");
+            inregistreazaLog(
+              "produs",
+              p.id,
+              "Încărcare baterie",
+              `ID produs: ${p.id_produs}`,
+            );
+            renderBateriiHub(container);
+          },
         );
+
+        if (magazine.length) {
+          bindBateriiRezumatBar(container, () => renderBateriiHub(container));
+          bindBateriiTableEvents(
+            container,
+            filtreazaProduseBaterii(
+              produseMagazine,
+              incarcariMagazine,
+              bateriiFiltruActiv,
+            ),
+            incarcariMagazine,
+          );
+        }
       }
 
       async function renderBateriiAdmin(container) {
@@ -7888,7 +8228,10 @@
             .from("hub_magazine")
             .select("*")
             .eq("hub_id", currentUser.id);
-          return { all: false, ids: (data || []).map((a) => a.magazin_id) };
+          return {
+            all: false,
+            ids: [...(data || []).map((a) => a.magazin_id), currentUser.id],
+          };
         }
         return { all: false, ids: [] };
       }
@@ -8215,9 +8558,17 @@
           currentProfile.role === "superadmin";
         const scope = await scopStatisticiRol();
         const { data: profiles } = await getCached("profiles");
-        const toateMagazinele = (profiles || []).filter(
-          (p) => p.role === "magazin",
-        );
+        const toateMagazinele = [
+          ...(profiles || []).filter((p) => p.role === "magazin"),
+          ...(profiles || [])
+            .filter((p) => p.role === "magazin_hub")
+            .map((p) => ({
+              id: p.id,
+              nume: `Depozit HUB - ${p.nume || p.email}`,
+              email: p.email,
+              filiala: "",
+            })),
+        ];
         const magazineVizibile = scope.all
           ? toateMagazinele
           : toateMagazinele.filter((m) => scope.ids.includes(m.id));
