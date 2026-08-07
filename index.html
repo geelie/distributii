@@ -1236,7 +1236,7 @@
 
         const { data, error } = await supa
           .from("produse")
-          .select("*")
+          .select("id, id_produs, marca, model, culoare, vin")
           .in("id", produsIds);
         if (!listEl.isConnected) return;
         if (error) {
@@ -1347,7 +1347,7 @@
         ${acasaCard({ label: "Stoc curent", value: stocRes.count ?? 0, tabKey: "stoc" })}
         ${acasaCard({ label: "Vândute luna aceasta", value: `${vandute.length} buc.`, colorClass: "text-emerald-600", tabKey: "vandute" })}
         ${acasaCard({ label: "Comenzi active", value: comenziRes.count ?? 0, tabKey: "comenzi" })}
-        ${acasaCard({ label: "Baterii depășite", value: rez.depasite, colorClass: rez.depasite ? "text-red-600" : "text-slate-800", tabKey: "baterii" })}`;
+        ${acasaCard({ label: "Baterii depășite", value: rez.depasite, sub: rez.ultimaZi ? `${rez.ultimaZi} produs${rez.ultimaZi === 1 ? "" : "e"} în ultima zi a ciclului` : "Niciun produs în ultima zi a ciclului", colorClass: rez.depasite ? "text-red-600" : "text-slate-800", tabKey: "baterii" })}`;
           } else if (currentProfile.role === "magazin_hub") {
             const { data: hubMagazine } = await supa
               .from("hub_magazine")
@@ -1421,7 +1421,7 @@
         ${acasaCard({ label: "Stoc total magazine", value: stocRes.count ?? 0, tabKey: "stoc" })}
         ${acasaCard({ label: "Vândute luna aceasta", value: `${vandute.length} buc.`, colorClass: "text-emerald-600", tabKey: "vandute" })}
         ${acasaCard({ label: "Comenzi active", value: comenziRes.count ?? 0, tabKey: "comenzi" })}
-        ${acasaCard({ label: "Baterii depășite", value: rez.depasite, colorClass: rez.depasite ? "text-red-600" : "text-slate-800", tabKey: "baterii" })}
+        ${acasaCard({ label: "Baterii depășite", value: rez.depasite, sub: rez.ultimaZi ? `${rez.ultimaZi} produs${rez.ultimaZi === 1 ? "" : "e"} în ultima zi a ciclului` : "Niciun produs în ultima zi a ciclului", colorClass: rez.depasite ? "text-red-600" : "text-slate-800", tabKey: "baterii" })}
         <div class="bg-white rounded-xl border p-4 fade-in" style="border-color:var(--line)">
           <div class="text-xs font-medium text-slate-400 mb-2">Top magazine (vânzări luna aceasta)</div>
           <div class="text-sm text-slate-700 space-y-1">${top3 || '<span class="text-slate-400">—</span>'}</div>
@@ -1479,30 +1479,38 @@
             const sapteZileInUrma = new Date(
               Date.now() - 7 * 86400000,
             ).toISOString();
-            const [stocRes, trimiseRes, comenziRes, vanduteRes] =
-              await Promise.all([
-                supa
-                  .from("produse")
-                  .select("id", { count: "exact", head: true })
-                  .is("magazin_id", null)
-                  .eq("vanzare_directa", false)
-                  .eq("vandut", false),
-                supa
-                  .from("produse")
-                  .select("id", { count: "exact", head: true })
-                  .not("magazin_id", "is", null)
-                  .gte("data_comenzii", sapteZileInUrma),
-                supa
-                  .from("comenzi")
-                  .select("id", { count: "exact", head: true })
-                  .in("status", ["in_asteptare", "partial_onorata"]),
-                supa
-                  .from("produse")
-                  .select("pret_cu_tva")
-                  .eq("vandut", true)
-                  .gte("data_vanzare", start)
-                  .lt("data_vanzare", end),
-              ]);
+            const [
+              stocRes,
+              trimiseRes,
+              comenziRes,
+              vanduteRes,
+              antedepozitRes,
+            ] = await Promise.all([
+              supa
+                .from("produse")
+                .select("id", { count: "exact", head: true })
+                .is("magazin_id", null)
+                .eq("vanzare_directa", false)
+                .eq("vandut", false),
+              supa
+                .from("produse")
+                .select("id", { count: "exact", head: true })
+                .not("magazin_id", "is", null)
+                .gte("data_comenzii", sapteZileInUrma),
+              supa
+                .from("comenzi")
+                .select("id", { count: "exact", head: true })
+                .in("status", ["in_asteptare", "partial_onorata"]),
+              supa
+                .from("produse")
+                .select("pret_cu_tva")
+                .eq("vandut", true)
+                .gte("data_vanzare", start)
+                .lt("data_vanzare", end),
+              supa
+                .from("antedepozit_import")
+                .select("id", { count: "exact", head: true }),
+            ]);
             const vandute = vanduteRes.data || [];
             const valoareVandute = vandute.reduce(
               (s, p) => s + (Number(p.pret_cu_tva) || 0),
@@ -1515,6 +1523,7 @@
         ${acasaCard({ label: "Produse trimise (ultimele 7 zile)", value: trimiseRes.count ?? 0, tabKey: "trimise" })}
         ${acasaCard({ label: "Comenzi active", value: comenziRes.count ?? 0, tabKey: "comenzi" })}
         ${acasaCard({ label: "Vânzări luna aceasta", value: `${fmtNum(valoareVandute)} lei`, sub: `${vandute.length} produse`, colorClass: "text-emerald-600", tabKey: "vandute" })}
+        ${acasaCard({ label: "Produse în antedepozit import", value: antedepozitRes.count ?? 0, tabKey: "antedepozit-import" })}
         ${acasaCardNotificariPret(notifPretIdsAcasa.length)}`;
           }
 
@@ -4373,11 +4382,11 @@
 
         overlay.innerHTML = `
     <div class="flex flex-col md:flex-row gap-4 items-center md:items-start justify-center my-auto">
-      <div id="comanda-nou-card" class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl fade-in relative shrink-0">
+      <div id="comanda-nou-card" class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md fade-in relative shrink-0">
         <button type="button" id="comanda-close-x" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-xl leading-none" title="Închide">✕</button>
         <h2 class="text-lg font-bold mb-5 pr-6">Comandă nouă</h2>
         <form id="form-new-comanda" class="space-y-4">
-          <div class="grid grid-cols-2 gap-3">
+          <div class="space-y-3">
             <div>
               ${fieldLabel("Magazin")}
               <select id="comanda-magazin" class="${inputBase()}" required>
@@ -4416,13 +4425,13 @@
         </form>
         <button type="button" id="comanda-vezi-stoc" class="mt-3 text-xs font-medium underline block" style="color:var(--teal-dark)">Vezi disponibilitate în stocul central</button>
       </div>
-      <div id="comanda-stoc-central-wrap" class="hidden bg-white rounded-2xl shadow-xl p-4 w-full max-w-sm fade-in flex flex-col shrink-0">
+      <div id="comanda-stoc-central-wrap" class="hidden bg-white rounded-2xl shadow-xl p-4 w-full max-w-md fade-in flex flex-col shrink-0">
         <p class="text-sm font-semibold text-slate-700 mb-2">Disponibil în stocul central</p>
         <input type="text" id="comanda-stoc-central-search" class="${inputBase()} mb-2 text-xs" placeholder="Caută categorie, marcă, model, culoare...">
         <div class="grid grid-cols-3 gap-2 mb-2">
-          <input type="text" id="comanda-stoc-central-filtru-marca" class="${inputBase()} text-xs" placeholder="Filtrează după marcă">
-          <input type="text" id="comanda-stoc-central-filtru-model" class="${inputBase()} text-xs" placeholder="Filtrează după model">
-          <input type="text" id="comanda-stoc-central-filtru-culoare" class="${inputBase()} text-xs" placeholder="Filtrează după culoare">
+          <input type="text" id="comanda-stoc-central-filtru-marca" class="${inputBase()} text-xs" placeholder="Filtrează marcă">
+          <input type="text" id="comanda-stoc-central-filtru-model" class="${inputBase()} text-xs" placeholder="Filtrează model">
+          <input type="text" id="comanda-stoc-central-filtru-culoare" class="${inputBase()} text-xs" placeholder="Filtrează culoare">
         </div>
         <div id="comanda-stoc-central-list" class="space-y-1 overflow-y-auto flex-1 min-h-0"></div>
       </div>
@@ -7325,16 +7334,18 @@
         return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700">🟢 În termen (${zileDiff} zi${zileDiff === 1 ? "" : "le"} rămase)</span>`;
       }
 
-      function rezumatBaterii(produse, incarcari) {
+      function rezumatBaterii(produse, incarcari, dataReferinta) {
         let inTermen = 0;
         let depasite = 0;
+        let ultimaZi = 0;
         (produse || []).forEach((p) => {
-          const c = calculeazaCicluriBaterie(p, incarcari);
+          const c = calculeazaCicluriBaterie(p, incarcari, dataReferinta);
           if (!c) return;
           if (c.statusCurent === "rosu") depasite++;
           else inTermen++;
+          if (c.statusCurent === "verde" && c.zileDiff === 0) ultimaZi++;
         });
-        return { inTermen, depasite, total: inTermen + depasite };
+        return { inTermen, depasite, ultimaZi, total: inTermen + depasite };
       }
 
       function bateriiRezumatBar(produse, incarcari, filtruActiv) {
@@ -8976,8 +8987,8 @@
                 .join("")}
             </select>
           </div>
-          <div class="w-32">${statLabel("De la")}<input type="date" id="stat-start" value="${state.start}" class="${statInput()}"></div>
-          <div class="w-32">${statLabel("Până la")}<input type="date" id="stat-end" value="${state.end}" class="${statInput()}"></div>
+          <div class="w-32">${statLabel("Din data")}<input type="date" id="stat-start" value="${state.start}" class="${statInput()}"></div>
+          <div class="w-32">${statLabel("Până în data")}<input type="date" id="stat-end" value="${state.end}" class="${statInput()}"></div>
           ${
             areFiltruMagazin
               ? `<div class="w-32">${statLabel("Magazin")}
