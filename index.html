@@ -922,6 +922,7 @@
           renderPendingRole();
           return;
         }
+
         const tabs = tabsForRole(currentProfile.role);
 
         app.innerHTML = `
@@ -1074,6 +1075,7 @@
           return [
             { key: "acasa", label: "Acasă" },
             { key: "depozit", label: "Depozit central" },
+            { key: "antedepozit-import", label: "Antedepozit Import" },
             { key: "trimise", label: "Produse trimise către magazine" },
             { key: "vandute", label: "Produse vândute" },
             { key: "comenzi", label: "Comenzi" },
@@ -1084,6 +1086,7 @@
           return [
             { key: "acasa", label: "Acasă" },
             { key: "depozit", label: "Depozit central" },
+            { key: "antedepozit-import", label: "Antedepozit Import" },
             { key: "trimise", label: "Produse trimise către magazine" },
             { key: "vandute", label: "Produse vândute" },
             { key: "comenzi", label: "Comenzi" },
@@ -1112,6 +1115,8 @@
           renderUserAdmin(content);
         } else if (key === "depozit") {
           renderDepozitCentral(content);
+        } else if (key === "antedepozit-import") {
+          renderAntedepozitImport(content);
         } else if (key === "trimise") {
           renderProduseTrimiseTab(content);
         } else if (key === "stoc" && currentProfile.role === "magazin") {
@@ -2580,6 +2585,304 @@
           });
       }
 
+      // ---------------------------------------------------------------
+      // Antedepozit Import — zonă de tranzit pentru produse (model, VIN,
+      // culoare) încărcate în bloc dintr-un Excel, înainte de a primi ID
+      // de produs și de a fi mutate efectiv în Depozitul central.
+      // ---------------------------------------------------------------
+      const antedepozitFilters = { model: "", vin: "", culoare: "" };
+
+      function buildAntedepozitQuery() {
+        let q = supa.from("antedepozit_import").select("*", { count: "exact" });
+        const modelVal = antedepozitFilters.model.trim();
+        const vinVal = antedepozitFilters.vin.trim();
+        const culoareVal = antedepozitFilters.culoare.trim();
+        if (modelVal)
+          q = q.ilike(
+            "model",
+            `%${modelVal.replace(/[%_]/g, (m) => "\\" + m)}%`,
+          );
+        if (vinVal)
+          q = q.ilike("vin", `%${vinVal.replace(/[%_]/g, (m) => "\\" + m)}%`);
+        if (culoareVal)
+          q = q.ilike(
+            "culoare",
+            `%${culoareVal.replace(/[%_]/g, (m) => "\\" + m)}%`,
+          );
+        return q;
+      }
+
+      async function loadAntedepozitData(pageKey) {
+        const { from, to } = rangeFor(pageKey);
+        const { data, error, count } = await buildAntedepozitQuery()
+          .order("created_at", { ascending: true })
+          .range(from, to);
+        return {
+          itemi: data || [],
+          error: error?.message,
+          totalCount: count || 0,
+        };
+      }
+
+      async function renderAntedepozitImport(container) {
+        container.innerHTML = `<div class="text-sm text-slate-400">Se încarcă...</div>`;
+        const myGen = renderGen;
+        const pageKey = "antedepozit-import";
+        const [d, profilesRes, marci, modele] = await Promise.all([
+          loadAntedepozitData(pageKey),
+          getCached("profiles"),
+          fetchMarciDistincte(),
+          fetchModeleDistincte(),
+        ]);
+        if (isStaleRender(myGen)) return;
+        if (d.error) {
+          container.innerHTML = `<div class="text-red-600 text-sm">${esc(d.error)}</div>`;
+          return;
+        }
+        const agentiList = (profilesRes.data || []).filter(
+          (a) => a.role === "agent",
+        );
+
+        container.innerHTML = `
+    <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
+      <p class="text-sm text-slate-500">${d.totalCount} produs${d.totalCount === 1 ? "" : "e"} în antedepozit</p>
+      <div class="flex items-center gap-2">
+        <input type="file" id="antedepozit-file-input" accept=".xlsx" class="hidden">
+        <button id="btn-antedepozit-upload" class="btn-primary rounded-lg px-4 py-2 text-sm">+ Încarcă din Excel</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+      <input type="text" id="antedepozit-search-model" placeholder="Caută după model..." autocomplete="off" value="${esc(antedepozitFilters.model)}" class="${inputBase()}">
+      <input type="text" id="antedepozit-search-vin" placeholder="Caută după serie șasiu (VIN)..." autocomplete="off" value="${esc(antedepozitFilters.vin)}" class="${inputBase()} font-mono">
+      <input type="text" id="antedepozit-search-culoare" placeholder="Caută după culoare..." autocomplete="off" value="${esc(antedepozitFilters.culoare)}" class="${inputBase()}">
+    </div>
+    <p id="antedepozit-upload-msg" class="text-xs text-slate-400 mb-2"></p>
+    ${renderAntedepozitTableHtml(d.itemi)}
+    ${paginationBarHtml(pageKey, d.totalCount)}`;
+
+        const refresh = () => renderAntedepozitImport(container);
+
+        d.itemi.forEach((item) =>
+          bindAntedepozitRow(item, agentiList, marci, modele, refresh),
+        );
+
+        bindPaginationBar(container, pageKey, refresh);
+
+        let searchDebounceAntedepozit;
+        const bindSearchField = (id, filterKey) => {
+          const input = document.getElementById(id);
+          input.addEventListener("input", () => {
+            clearTimeout(searchDebounceAntedepozit);
+            const valoare = input.value;
+            const caret = input.selectionStart;
+            searchDebounceAntedepozit = setTimeout(async () => {
+              antedepozitFilters[filterKey] = valoare;
+              resetPage(pageKey);
+              await refresh();
+              const newInput = document.getElementById(id);
+              if (newInput) {
+                newInput.focus();
+                newInput.setSelectionRange(caret, caret);
+              }
+            }, 300);
+          });
+        };
+        bindSearchField("antedepozit-search-model", "model");
+        bindSearchField("antedepozit-search-vin", "vin");
+        bindSearchField("antedepozit-search-culoare", "culoare");
+
+        const fileInput = document.getElementById("antedepozit-file-input");
+        document
+          .getElementById("btn-antedepozit-upload")
+          .addEventListener("click", () => fileInput.click());
+        fileInput.addEventListener("change", async () => {
+          const file = fileInput.files && fileInput.files[0];
+          if (!file) return;
+          await importAntedepozitExcel(file);
+          fileInput.value = "";
+          refresh();
+        });
+      }
+
+      function renderAntedepozitTableHtml(itemi) {
+        if (!itemi.length) {
+          return `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun produs în antedepozit. Încarcă un fișier Excel pentru a începe.</p></div>`;
+        }
+        return `
+    <div class="bg-white rounded-xl border tabel-fix-wrap" style="border-color:var(--line)">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr>
+            <th class="px-3 py-2 text-left font-semibold text-slate-500">Model</th>
+            <th class="px-3 py-2 text-left font-semibold text-slate-500">Serie șasiu (VIN)</th>
+            <th class="px-3 py-2 text-left font-semibold text-slate-500">Culoare</th>
+            <th class="px-3 py-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemi
+            .map(
+              (p) => `
+          <tr data-antedepozit-row="${p.id}">
+            <td class="px-3 py-3">${esc(p.model || "—")}</td>
+            <td class="px-3 py-3 font-mono text-xs">${esc(p.vin || "—")}</td>
+            <td class="px-3 py-3">${esc(p.culoare || "—")}</td>
+            <td class="px-3 py-3 text-right">
+              <button type="button" data-muta-antedepozit="${p.id}" class="btn-primary rounded-md px-2.5 py-1 text-xs font-medium">Mută în Depozitul central</button>
+            </td>
+          </tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>`;
+      }
+
+      function bindAntedepozitRow(item, agenti, marci, modele, refresh) {
+        const row = document.querySelector(
+          `[data-antedepozit-row="${item.id}"]`,
+        );
+        if (!row) return;
+        const btn = row.querySelector(`[data-muta-antedepozit="${item.id}"]`);
+        if (!btn) return;
+        btn.addEventListener("click", () => {
+          renderAddProductModal(
+            agenti,
+            refresh,
+            async (produsNou) => {
+              const { error } = await supa
+                .from("antedepozit_import")
+                .delete()
+                .eq("id", item.id);
+              if (error) {
+                toast(
+                  "Produsul a fost salvat, dar nu a putut fi șters din antedepozit: " +
+                    error.message,
+                  true,
+                );
+                return;
+              }
+              inregistreazaLog(
+                "produs",
+                produsNou.id,
+                "Mutat din Antedepozit Import",
+                `Model: ${item.model || "—"} · VIN: ${item.vin || "—"} · Culoare: ${item.culoare || "—"}`,
+              );
+              refresh();
+            },
+            { model: item.model, vin: item.vin, culoare: item.culoare },
+            marci,
+            modele,
+          );
+        });
+      }
+
+      // Import Excel pentru Antedepozit — folosește ExcelJS (deja încărcat
+      // pentru export) ca să citească fișierul direct în browser, fără a
+      // trece prin server. Antetele sunt căutate case-insensitive; coloana
+      // "SERIE MOTOR" este ignorată intenționat.
+      async function importAntedepozitExcel(file) {
+        const msg = document.getElementById("antedepozit-upload-msg");
+        if (msg) {
+          msg.className = "text-xs text-slate-400 mb-2";
+          msg.textContent = "Se citește fișierul...";
+        }
+        try {
+          const buffer = await file.arrayBuffer();
+          const wb = new ExcelJS.Workbook();
+          await wb.xlsx.load(buffer);
+          const sheet = wb.worksheets[0];
+          if (!sheet)
+            throw new Error("Fișierul Excel nu conține niciun sheet.");
+
+          const headerRow = sheet.getRow(1);
+          const colIndex = { model: null, vin: null, culoare: null };
+          headerRow.eachCell((cell, colNumber) => {
+            const val = String(cell.value || "")
+              .trim()
+              .toUpperCase();
+            if (val === "MODEL") colIndex.model = colNumber;
+            else if (val === "SERIE SASIU") colIndex.vin = colNumber;
+            else if (val === "CULOARE") colIndex.culoare = colNumber;
+          });
+          if (!colIndex.model && !colIndex.vin && !colIndex.culoare) {
+            throw new Error(
+              'Nu am găsit coloanele "MODEL", "SERIE SASIU" sau "CULOARE" pe primul rând al fișierului.',
+            );
+          }
+
+          const randuri = [];
+          sheet.eachRow((row, rowNumber) => {
+            if (rowNumber === 1) return;
+            const model = colIndex.model
+              ? String(row.getCell(colIndex.model).value || "").trim()
+              : "";
+            const vin = colIndex.vin
+              ? String(row.getCell(colIndex.vin).value || "").trim()
+              : "";
+            const culoare = colIndex.culoare
+              ? String(row.getCell(colIndex.culoare).value || "").trim()
+              : "";
+            if (!model && !vin && !culoare) return;
+            randuri.push({
+              model: model || null,
+              vin: vin || null,
+              culoare: culoare || null,
+              created_by: currentUser.id,
+            });
+          });
+
+          if (!randuri.length) {
+            if (msg) {
+              msg.className = "text-xs text-amber-600 mb-2";
+              msg.textContent =
+                "Fișierul nu conține rânduri valide de importat.";
+            }
+            return;
+          }
+
+          // Evită dublarea rândurilor cu VIN deja existent în antedepozit.
+          const vinuriNoi = randuri.map((r) => r.vin).filter((v) => v);
+          let vinuriExistente = new Set();
+          if (vinuriNoi.length) {
+            const { data: existente } = await supa
+              .from("antedepozit_import")
+              .select("vin")
+              .in("vin", vinuriNoi);
+            vinuriExistente = new Set((existente || []).map((r) => r.vin));
+          }
+          const randuriDeInserat = randuri.filter(
+            (r) => !r.vin || !vinuriExistente.has(r.vin),
+          );
+          const ignorate = randuri.length - randuriDeInserat.length;
+
+          const CHUNK = 500;
+          let inserate = 0;
+          for (let i = 0; i < randuriDeInserat.length; i += CHUNK) {
+            const lot = randuriDeInserat.slice(i, i + CHUNK);
+            if (!lot.length) continue;
+            const { error } = await supa.from("antedepozit_import").insert(lot);
+            if (error) throw new Error(error.message);
+            inserate += lot.length;
+          }
+
+          if (msg) {
+            msg.className = "text-xs text-emerald-600 mb-2";
+            msg.textContent = `Import finalizat: ${inserate} produse adăugate${ignorate ? `, ${ignorate} ignorate (VIN deja existent în antedepozit)` : ""}.`;
+          }
+          toast(
+            `Import finalizat: ${inserate} produse adăugate în antedepozit.`,
+          );
+        } catch (e) {
+          const errMsg = e && e.message ? e.message : String(e);
+          if (msg) {
+            msg.className = "text-xs text-red-600 mb-2";
+            msg.textContent = "Eroare la import: " + errMsg;
+          }
+          toast("Eroare la import: " + errMsg, true);
+        }
+      }
+
       // Produse trimise: produsele alocate unui magazin sau marcate
       // "vânzare directă", nevândute încă. comenzi/comanda_produse sunt
       // interogate doar pentru produsele din pagina curentă, ca să se poată
@@ -2866,7 +3169,7 @@
             ${produsFieldLabel("ID produs")}
             <input type="text" value="${idProdus}" disabled class="${produsInputBase()} bg-slate-50 font-mono text-slate-500">
           </div>
-          <div>${produsFieldLabel("VIN")}<input type="text" id="add-vin" class="${produsInputBase()} font-mono"></div>
+          <div>${produsFieldLabel("VIN")}<input type="text" id="add-vin" class="${produsInputBase()} font-mono" value="${esc(prefill?.vin || "")}"></div>
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
