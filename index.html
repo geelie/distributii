@@ -2642,6 +2642,9 @@
         const agentiList = (profilesRes.data || []).filter(
           (a) => a.role === "agent",
         );
+        const profileById = new Map(
+          (profilesRes.data || []).map((p) => [p.id, p]),
+        );
 
         container.innerHTML = `
     <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
@@ -2657,7 +2660,7 @@
       <input type="text" id="antedepozit-search-culoare" placeholder="Caută după culoare..." autocomplete="off" value="${esc(antedepozitFilters.culoare)}" class="${inputBase()}">
     </div>
     <p id="antedepozit-upload-msg" class="text-xs text-slate-400 mb-2"></p>
-    ${renderAntedepozitTableHtml(d.itemi, getPageState(pageKey).page * PAGE_SIZE)}
+    ${renderAntedepozitTableHtml(d.itemi, getPageState(pageKey).page * PAGE_SIZE, profileById)}
     ${paginationBarHtml(pageKey, d.totalCount)}`;
 
         const refresh = () => renderAntedepozitImport(container);
@@ -2704,7 +2707,7 @@
         });
       }
 
-      function renderAntedepozitTableHtml(itemi, offset) {
+      function renderAntedepozitTableHtml(itemi, offset, profileById) {
         if (!itemi.length) {
           return `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun produs în antedepozit. Încarcă un fișier Excel pentru a începe.</p></div>`;
         }
@@ -2717,23 +2720,31 @@
             <th class="px-3 py-2 text-left font-semibold text-slate-500">Model</th>
             <th class="px-3 py-2 text-left font-semibold text-slate-500">Serie șasiu (VIN)</th>
             <th class="px-3 py-2 text-left font-semibold text-slate-500">Culoare</th>
+            <th class="px-3 py-2 text-left font-semibold text-slate-500">Adăugat la data/ora</th>
+            <th class="px-3 py-2 text-left font-semibold text-slate-500">Adăugat de:</th>
             <th class="px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
           ${itemi
-            .map(
-              (p, idx) => `
+            .map((p, idx) => {
+              const autor = p.created_by
+                ? profileById && profileById.get(p.created_by)
+                : null;
+              const autorLabel = autor ? autor.nume || autor.email : "—";
+              return `
           <tr data-antedepozit-row="${p.id}">
             <td class="px-3 py-3 text-slate-500">${(offset || 0) + idx + 1}</td>
             <td class="px-3 py-3">${esc(p.model || "—")}</td>
             <td class="px-3 py-3 font-mono text-xs">${esc(p.vin || "—")}</td>
             <td class="px-3 py-3">${esc(p.culoare || "—")}</td>
+            <td class="px-3 py-3 text-xs text-slate-500">${p.created_at ? new Date(p.created_at).toLocaleString("ro-RO") : "—"}</td>
+            <td class="px-3 py-3">${esc(autorLabel)}</td>
             <td class="px-3 py-3 text-right">
               <button type="button" data-muta-antedepozit="${p.id}" class="btn-primary rounded-md px-2.5 py-1 text-xs font-medium">Mută în Depozitul central</button>
             </td>
-          </tr>`,
-            )
+          </tr>`;
+            })
             .join("")}
         </tbody>
       </table>
