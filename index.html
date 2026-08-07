@@ -2657,7 +2657,7 @@
       <input type="text" id="antedepozit-search-culoare" placeholder="Caută după culoare..." autocomplete="off" value="${esc(antedepozitFilters.culoare)}" class="${inputBase()}">
     </div>
     <p id="antedepozit-upload-msg" class="text-xs text-slate-400 mb-2"></p>
-    ${renderAntedepozitTableHtml(d.itemi)}
+    ${renderAntedepozitTableHtml(d.itemi, getPageState(pageKey).page * PAGE_SIZE)}
     ${paginationBarHtml(pageKey, d.totalCount)}`;
 
         const refresh = () => renderAntedepozitImport(container);
@@ -2704,7 +2704,7 @@
         });
       }
 
-      function renderAntedepozitTableHtml(itemi) {
+      function renderAntedepozitTableHtml(itemi, offset) {
         if (!itemi.length) {
           return `<div class="bg-white rounded-xl border p-10 text-center" style="border-color:var(--line)"><p class="text-slate-400 text-sm">Niciun produs în antedepozit. Încarcă un fișier Excel pentru a începe.</p></div>`;
         }
@@ -2713,6 +2713,7 @@
       <table class="min-w-full text-sm">
         <thead>
           <tr>
+            <th class="px-3 py-2 text-left font-semibold text-slate-500">Nr.Crt</th>
             <th class="px-3 py-2 text-left font-semibold text-slate-500">Model</th>
             <th class="px-3 py-2 text-left font-semibold text-slate-500">Serie șasiu (VIN)</th>
             <th class="px-3 py-2 text-left font-semibold text-slate-500">Culoare</th>
@@ -2722,8 +2723,9 @@
         <tbody>
           ${itemi
             .map(
-              (p) => `
+              (p, idx) => `
           <tr data-antedepozit-row="${p.id}">
+            <td class="px-3 py-3 text-slate-500">${(offset || 0) + idx + 1}</td>
             <td class="px-3 py-3">${esc(p.model || "—")}</td>
             <td class="px-3 py-3 font-mono text-xs">${esc(p.vin || "—")}</td>
             <td class="px-3 py-3">${esc(p.culoare || "—")}</td>
